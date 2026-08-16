@@ -1,0 +1,15 @@
+{
+  "name": "小人の黒板",
+  "short_name": "小人の黒板",
+  "description": "描いた線が小人の足場になる、ブラウザの黒板。",
+  "lang": "ja",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#2d2015",
+  "theme_color": "#3b2a1c",
+  "icons": [
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ]
+}

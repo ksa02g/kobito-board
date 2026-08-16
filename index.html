@@ -5,10 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#3b2a1c">
 <meta name="description" content="ブラウザで動く黒板。描いた線の上を小人たちが左から右へ歩いていきます。太陽・雲・小鳥をタップすると反応し、描いた線は20秒ほどで消えていきます。">
+<!-- ホーム画面に追加すると、アドレスバーも端フリックの戻るもない全画面で動きます -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="小人の黒板">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
 <title>小人の黒板</title>
 <style>
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent}
-  html,body{height:100%; overflow:hidden; overscroll-behavior:none}
+  /* 長押しメニュー・文字選択・拡大鏡が出ないように（誤操作よけ） */
+  html,body,canvas,button,div,span{
+    -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
+  }
+  html,body{height:100%; overflow:hidden; overscroll-behavior:none; position:fixed;
+            width:100%; top:0; left:0}
   body{
     background:#2d2015;
     background-image:
@@ -199,6 +213,26 @@
 <script>
 "use strict";
 (function(){
+
+/* ============================================================
+   誤操作よけ（iPad・iPhone・タッチディスプレイ向け）
+   ・右クリック／長押しのメニューを出さない
+   ・ピンチ拡大、ダブルタップ拡大をさせない
+   ・画面の引っぱり（バウンス）で表示がずれないようにする
+   ※ ホームボタン／アプリ切り替えは塞いでいません
+   ============================================================ */
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('gesturestart',  e => e.preventDefault());
+document.addEventListener('gesturechange', e => e.preventDefault());
+document.addEventListener('gestureend',    e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+document.addEventListener('touchmove', e=>{
+  const t = e.target;
+  if(t && t.closest && t.closest('#tray, #help')) return;   // つまみやヘルプは動かせるように
+  e.preventDefault();
+}, {passive:false});
+document.addEventListener('selectstart', e => e.preventDefault());
+document.addEventListener('dragstart',   e => e.preventDefault());
 
 /* ============================================================
    基本
