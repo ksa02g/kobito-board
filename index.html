@@ -47,18 +47,24 @@
 
   .grp{display:flex; gap:6px; align-items:center;
        background:rgba(0,0,0,.24); border-radius:10px; padding:5px 7px}
+  #chalks{gap:8px; padding:8px 10px}
   .chalk{
-    width:34px; height:20px; border:0; border-radius:3px; cursor:pointer;
-    box-shadow:inset -4px 0 0 rgba(0,0,0,.22), inset 0 -3px 0 rgba(0,0,0,.16), 0 2px 4px rgba(0,0,0,.5);
+    width:46px; height:34px; border:0; border-radius:4px; cursor:pointer;
+    box-shadow:inset -5px 0 0 rgba(0,0,0,.22), inset 0 -4px 0 rgba(0,0,0,.16), 0 2px 4px rgba(0,0,0,.5);
     transition:transform .12s ease, box-shadow .12s ease;
+    position:relative; touch-action:manipulation;
   }
   .chalk:hover{transform:translateY(-3px)}
-  .chalk.on{transform:translateY(-7px) rotate(-4deg);
-    box-shadow:inset -4px 0 0 rgba(0,0,0,.22), 0 0 0 2px rgba(255,255,255,.85), 0 4px 8px rgba(0,0,0,.6)}
+  .chalk.on{transform:translateY(-9px) rotate(-4deg);
+    box-shadow:inset -5px 0 0 rgba(0,0,0,.22), 0 0 0 3px rgba(255,255,255,.95), 0 5px 10px rgba(0,0,0,.6)}
+  .chalk.on::after{
+    content:'▼'; position:absolute; left:0; right:0; bottom:-15px;
+    font-size:10px; color:#fff; text-shadow:0 1px 2px #000; pointer-events:none;
+  }
   button.b{
-    border:0; border-radius:9px; cursor:pointer; font:600 13px/1 inherit; color:#f6eddc;
-    background:linear-gradient(#6d4e31,#4a3320); padding:9px 11px;
-    box-shadow:0 2px 0 #241809, 0 3px 7px rgba(0,0,0,.45);
+    border:0; border-radius:9px; cursor:pointer; font:600 14px/1 inherit; color:#f6eddc;
+    background:linear-gradient(#6d4e31,#4a3320); padding:12px 14px; min-width:44px;
+    box-shadow:0 2px 0 #241809, 0 3px 7px rgba(0,0,0,.45); touch-action:manipulation;
   }
   button.b:hover{background:linear-gradient(#7d5b3b,#563c26)}
   button.b:active{transform:translateY(2px); box-shadow:0 1px 0 #241809}
@@ -87,10 +93,10 @@
   #helpbox .close{margin-top:16px}
   @media (max-width:640px){
     .lbl{display:none}
-    input[type=range]{width:56px}
+    input[type=range]{width:60px}
     #tray{gap:5px; padding-left:5px; padding-right:5px}
-    button.b{padding:9px 8px; font-size:12px}
-    .chalk{width:24px}
+    button.b{padding:11px 10px; font-size:13px}
+    .chalk{width:38px; height:30px}
   }
 </style>
 </head>
@@ -99,6 +105,7 @@
 <div id="frame"><div id="inner"><canvas id="board"></canvas></div></div>
 
 <div id="tray">
+  <span class="lbl">チョーク</span>
   <div class="grp" id="chalks"></div>
   <div class="grp">
     <button class="b" id="eraser" title="黒板消し (E)">消し</button>
@@ -136,8 +143,11 @@
     <li>☁ <b>雲</b> — 雨が降ります。地面や線にあたって跳ねます。やんだあと、たまに虹が出ます。
         雨のあいだは草花がぐんぐん育ちます</li>
     <li>🫧 <b>シャボン玉</b> — <b>割れて、中に入っていたものが出てきます</b>。
-        小人・小鳥・<b>まめのたね</b>・星・音符・魚・ハートのどれか。
+        小人・小鳥・<b>まめのたね</b>・<b>火の玉</b>・星・音符・魚・ハートのどれか。
         <b>たねが地面に落ちると、そこからジャックと豆の木がぐんぐん伸びます</b></li>
+    <li>🔥 <b>火の玉</b> — シャボン玉から出ると<b>そのまま落ちていきます</b>。
+        当たったところのチョークの線を焼き切り、草花や豆の木も燃やします。
+        小人はあわてて逃げます</li>
     <li>🐦 <b>小鳥</b> — 指でつまんだまま運べます。線や地面の上ではなすとそこにとまり、
         空ではなすと飛んでいきます。ちょんと触っただけならおどろいて飛び立ちます</li>
     <li>🚶 <b>小人</b> — びっくりしてジャンプします</li>
@@ -176,7 +186,8 @@
 
   <h3>キーボード</h3>
   <ul>
-    <li><kbd>1</kbd>〜<kbd>5</kbd> チョークの色 ／ <kbd>E</kbd> 黒板消し ／ <kbd>[</kbd> <kbd>]</kbd> 太さ</li>
+    <li><kbd>1</kbd>〜<kbd>5</kbd> チョークの色（白・黄・桃・水・緑）
+        ／ <kbd>E</kbd> 黒板消し ／ <kbd>[</kbd> <kbd>]</kbd> 太さ</li>
     <li><kbd>N</kbd> 小人を増やす ／ <kbd>M</kbd> 減らす（ふだんは自動で5〜20人に増減します）</li>
     <li><kbd>L</kbd> 消灯 ／ <kbd>S</kbd> 保存 ／ <kbd>C</kbd> 全消し</li>
     <li><kbd>H</kbd> 道具を隠す ／ <kbd>?</kbd> このヘルプ</li>
@@ -517,6 +528,17 @@ function spark(x,y,n,color){
 function note(x,y){
   part({k:'n', x, y, vx:rnd(-.5,.5), vy:rnd(-1.5,-.7), life:70, max:70, c:'#f4f1e6', ch: pick(['♪','♫','♩'])});
 }
+function flame(x,y,n,up){
+  for(let i=0;i<n;i++)
+    part({k:'f', x:x+rnd(-3,3), y:y+rnd(-3,3), vx:rnd(-.7,.7),
+          vy: up ? rnd(-1.5,-.2) : rnd(-.6,.6),
+          life:rnd(14,36), max:36, c:pick(['#ffe9b0','#ffd27a','#ff9d4d','#ff6b3d'])});
+}
+function smoke(x,y,n){
+  for(let i=0;i<n;i++)
+    part({k:'m', x:x+rnd(-5,5), y:y+rnd(-4,4), vx:rnd(-.4,.4), vy:rnd(-1.0,-.3),
+          life:rnd(40,80), max:80, c:'#9aa39c'});
+}
 function splash(x,y){
   for(let i=0;i<4;i++){
     const a = rnd(-2.6,-0.5);
@@ -526,7 +548,10 @@ function splash(x,y){
 function updateParts(){
   for(let i=parts.length-1;i>=0;i--){
     const p = parts[i];
-    p.vy += (p.k==='n') ? -0.004 : 0.05;
+    if(p.k==='n')      p.vy -= 0.004;
+    else if(p.k==='f') p.vy -= 0.038;          // 炎は昇る
+    else if(p.k==='m'){ p.vy -= 0.012; p.vx *= 0.97; }
+    else p.vy += 0.05;
     p.x += p.vx; p.y += p.vy; p.vx *= 0.985; p.life--;
     if(p.life<=0 || p.y>H+14) parts.splice(i,1);
   }
@@ -534,12 +559,87 @@ function updateParts(){
 function drawParts(g){
   for(const p of parts){
     const a = Math.min(1, p.life/p.max);
-    g.globalAlpha = a * (p.k==='n' ? 0.9 : 0.6);
     g.fillStyle = p.c;
-    if(p.k==='n'){ g.font = '14px "Yu Gothic UI",sans-serif'; g.fillText(p.ch, p.x, p.y); }
-    else g.fillRect(p.x, p.y, p.k==='s'?1.8:1.5, p.k==='s'?1.8:1.5);
+    if(p.k==='n'){
+      g.globalAlpha = a*0.9;
+      g.font = '14px "Yu Gothic UI",sans-serif'; g.fillText(p.ch, p.x, p.y);
+    }else if(p.k==='f'){
+      g.globalAlpha = a*a*0.85;
+      g.beginPath(); g.arc(p.x, p.y, 1.2 + a*2.2, 0, 6.2832); g.fill();
+    }else if(p.k==='m'){
+      g.globalAlpha = a*0.16;
+      g.beginPath(); g.arc(p.x, p.y, 3 + (1-a)*9, 0, 6.2832); g.fill();
+    }else{
+      g.globalAlpha = a*0.6;
+      g.fillRect(p.x, p.y, p.k==='s'?1.8:1.5, p.k==='s'?1.8:1.5);
+    }
   }
   g.globalAlpha = 1;
+}
+
+/* ---------- 火の玉（シャボン玉から落ちてくる） ---------- */
+const fires = [];
+function updateFires(dt){
+  for(let i=fires.length-1;i>=0;i--){
+    const f = fires[i];
+    f.ph += dt*14;
+    f.vy = Math.min(f.vy + 0.36, 13);
+    f.vx *= 0.99;
+    const ny = f.y + f.vy;
+    let hitY = null;
+    for(let y=Math.ceil(f.y); y<=ny; y++){        // 線をすり抜けないように刻んで見る
+      if(solidAt(f.x, y)){ hitY = y; break; }
+    }
+    f.x += f.vx;
+    f.y = (hitY === null) ? ny : hitY;
+    flame(f.x, f.y - f.vy*0.4, 2, true);
+    if(Math.random() < 0.4) smoke(f.x + rnd(-4,4), f.y - 8, 1);
+    for(const k of kobitos){                      // 小人が逃げる
+      if(Math.abs(k.x - f.x) < 70 && Math.abs(k.y - f.y) < 130 && k.grounded && Math.random() < 0.05){
+        k.state = 'run'; k.t = 60;
+        if(Math.random() < 0.3) speak(k, pick(['あつい！','にげろー','わー！']));
+      }
+    }
+    if(hitY !== null || f.y >= FLOOR){ burnAt(f.x, Math.min(f.y, FLOOR), f.r); fires.splice(i,1); }
+  }
+}
+function burnAt(x, y, r){
+  const R = r*2.6;
+  flame(x, y, 34, true);
+  smoke(x, y-6, 12);
+  spark(x, y, 10, '#ffb15c');
+  for(let i=0;i<9;i++){                            // まわりのチョークを焼き切る
+    const a = rnd(0,6.2832), d = Math.sqrt(Math.random())*R;
+    eraseAt(x + Math.cos(a)*d, y + Math.sin(a)*d, r*1.1);
+  }
+  for(const p of plants)
+    if(Math.hypot(p.x-x, p.y-y) < R*1.2 && p.state !== 'wither'){ p.state = 'wither'; p.wither = 0.2; }
+  for(const c of climbers)                         // 豆の木も燃えてしまう
+    if(Math.abs(c.x-x) < R && y > climbTop(c)-10 && c.state !== 'wither'){
+      c.state = 'wither'; c.wither = 0; setPlatform(c, false);
+      flame(c.x, y-20, 12, true);
+    }
+  for(const k of kobitos)
+    if(Math.hypot(k.x-x, k.y-y) < R*1.6){
+      k.vy = -5.6*Math.sqrt(k.sc); k.grounded = false; k.state = 'jump'; k.t = 50; k.climb = null;
+      if(Math.random() < 0.8) speak(k, pick(['あちちち！','あついー！','たすけて〜','びっくりした']));
+    }
+}
+function drawFires(g, time){
+  for(const f of fires){
+    const r = f.r*(1 + Math.sin(f.ph)*0.09);
+    g.save();
+    const gr = g.createRadialGradient(f.x, f.y, 1, f.x, f.y, r*2.6);
+    gr.addColorStop(0,  'rgba(255,220,150,.55)');
+    gr.addColorStop(0.4,'rgba(255,140,60,.22)');
+    gr.addColorStop(1,  'rgba(255,90,40,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(f.x, f.y, r*2.6, 0, 6.2832); g.fill();
+    g.globalAlpha = 0.9; g.fillStyle = '#ff9d4d';
+    g.beginPath(); g.arc(f.x, f.y, r*0.82, 0, 6.2832); g.fill();
+    g.fillStyle = '#ffe9b0';
+    g.beginPath(); g.arc(f.x - r*0.12, f.y - r*0.18, r*0.46, 0, 6.2832); g.fill();
+    g.restore();
+  }
 }
 
 /* ============================================================
@@ -833,7 +933,7 @@ function drawClimbers(g, time){
    シャボン玉（中に何か入っている。タップすると割れる）
    ============================================================ */
 const bubbles = [], freed = [];
-const CONTENTS = ['kobito','bird','seed','seed','star','note','fish','heart'];
+const CONTENTS = ['kobito','bird','seed','seed','star','note','fish','heart','fire'];
 let bubbleTimer = rnd(2,5);
 
 function makeBubble(x, y){
@@ -898,6 +998,14 @@ function popBubble(b, tapped){
       break;
     }
     case 'seed': seeds.push({x:b.x, y:b.y, vy:0.4}); break;
+    case 'fire': {                                   // 火の玉が落ちる
+      fires.push({x:b.x, y:b.y, vx:rnd(-0.5,0.5), vy:0.6, r:rnd(9,14), ph:rnd(0,6.28)});
+      flame(b.x, b.y, 14, true);
+      for(const k of kobitos)
+        if(Math.abs(k.x-b.x) < 190 && Math.random() < 0.6)
+          speak(k, pick(['あぶない！','ひのたま！','にげろー','あついよ！']));
+      break;
+    }
     case 'note':   for(let i=0;i<5;i++) note(b.x+rnd(-10,10), b.y+rnd(-8,8)); break;
     case 'star':
       spark(b.x, b.y, 22, COLORS[1].css);
@@ -967,6 +1075,23 @@ function drawContent(g, kind, x, y, size, time, alpha){
     g.lineTo(-size*1.35, -size*0.4+tw*size); g.lineTo(-size*1.35, size*0.4+tw*size);
     g.closePath(); g.stroke();
     g.fillStyle = COLORS[3].css; g.beginPath(); g.arc(size*0.42,-size*0.1, size*0.11, 0, 6.2832); g.fill();
+  }
+  else if(kind === 'fire'){                       // 火の玉
+    const fl = Math.sin(time*9)*0.12;
+    g.fillStyle = '#ff9d4d'; g.globalAlpha *= 0.85;
+    g.beginPath();
+    g.moveTo(0, -size*(1.05+fl));
+    g.quadraticCurveTo( size*0.72, -size*0.15,  size*0.42, size*0.55);
+    g.quadraticCurveTo( 0, size*0.95, -size*0.42, size*0.55);
+    g.quadraticCurveTo(-size*0.72, -size*0.15, 0, -size*(1.05+fl));
+    g.closePath(); g.fill();
+    g.fillStyle = '#ffe9b0';
+    g.beginPath();
+    g.moveTo(0, -size*0.45);
+    g.quadraticCurveTo( size*0.34, size*0.05,  size*0.18, size*0.5);
+    g.quadraticCurveTo( 0, size*0.72, -size*0.18, size*0.5);
+    g.quadraticCurveTo(-size*0.34, size*0.05, 0, -size*0.45);
+    g.closePath(); g.fill();
   }
   else{ // heart
     g.strokeStyle = COLORS[2].css; g.lineWidth = 1.9;
@@ -1436,7 +1561,7 @@ function makeKobito(fromSky){
     state: fromSky ? 'fall' : 'walk', t: 60, phase: rnd(0,6.283),
     speed: rnd(0.30,0.44), grounded:false, seed: rnd(0,997),
     say:null, sayT:0, doodle:null, back:0, wear: pick(HATS),
-    climb:null, cdir:-1, cspd:0, climbCool:0
+    climb:null, cdir:-1, cspd:0, climbCool:0, cGrace:0
   };
 }
 function spawnKobito(){
@@ -1531,8 +1656,35 @@ function updateClimb(k){
     return;
   }
   const top = climbTop(c), bot = c.base;
-  k.y += k.cdir * k.cspd;
-  k.x += (climbXAt(c, k.y) - k.x) * 0.3;
+  const s = k.sc;
+  if(k.cGrace > 0) k.cGrace--;
+
+  const ny = k.y + k.cdir * k.cspd;
+  const nx = k.x + (climbXAt(c, ny) - k.x) * 0.3;
+
+  // 描いた線のほうが強い。つるやはしごより線を優先して、すり抜けないようにする
+  if(k.cGrace <= 0){
+    if(k.cdir < 0){
+      // 頭・胸がぶつかったら通れない（ただし、つる／はしご自身のてっぺんの足場は除く）
+      const h1 = ny - 20*s, h2 = ny - 12*s;
+      const hit = (h1 > top + 6 && solidAt(nx, h1)) || (h2 > top + 6 && solidAt(nx, h2));
+      if(hit){
+        k.cdir = 1; k.cGrace = 8;
+        if(Math.random() < 0.7) speak(k, pick(['とおれない','ふさがってる','あれ？','うーん…']));
+        k.phase += 0.22;
+        return;
+      }
+    }else{
+      if(solidAt(nx, ny + 2) || solidAt(nx-2.5*s, ny + 2) || solidAt(nx+2.5*s, ny + 2)){
+        k.y = ny; k.x = nx;                                    // 足がついた線の上に降り立つ
+        k.climb = null; k.grounded = true; k.climbCool = 120;
+        k.state = 'walk'; k.t = rnd(50,120);
+        if(Math.random() < 0.4) speak(k, pick(['とうちゃく','ここでいいや','ひとやすみ']));
+        return;
+      }
+    }
+  }
+  k.y = ny; k.x = nx;
   k.dir = 1;
   k.phase += 0.22;
   if(Math.random() < 0.006) speak(k, pick(['よいしょ','たかい！','もうすこし','ふう','くもの上まで？']));
@@ -1563,6 +1715,7 @@ function tryClimb(k){
     k.cdir = (k.y - top < 24) ? 1 : -1;             // てっぺん付近なら降りる
     k.cspd = rnd(0.45,0.85)*k.sc;
     k.state = 'climb'; k.phase = 0;
+    k.cGrace = 14;                                  // 乗っている線を通り抜けるための猶予
     if(Math.random() < 0.6)
       speak(k, k.cdir < 0 ? pick(['のぼるぞ！','たかいところへ','よじよじ','たんけんだ！'])
                           : pick(['おりよう','いくよー']));
@@ -2136,6 +2289,7 @@ function frame(now){
   updatePlants(dt);
   updateClimbers(dt);
   updateBubbles(dt);
+  updateFires(dt);
   for(const k of kobitos) updateKobito(k);
   updateParts();
   Music.tick(dt, night);
@@ -2157,6 +2311,7 @@ function frame(now){
   drawBirds(vctx);
   for(const k of kobitos) drawKobito(vctx, k, time);
   drawBubbles(vctx, time);
+  drawFires(vctx, time);
   drawParts(vctx);
 
   if(night){
@@ -2166,8 +2321,32 @@ function frame(now){
   vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,.35)');
   vctx.fillStyle = vg; vctx.fillRect(0,0,W,H);
 
+  drawToast(vctx, dt);
+
   requestAnimationFrame(frame);
 }
+/* 画面まん中に一瞬だけ出す知らせ（押せたことが分かるように） */
+let toastMsg = null, toastT = 0, toastCol = '#f4f1e6';
+function toast(msg, col){ toastMsg = msg; toastCol = col || '#f4f1e6'; toastT = 1.5; }
+function drawToast(g, dt){
+  if(!toastMsg) return;
+  toastT -= dt;
+  if(toastT <= 0){ toastMsg = null; return; }
+  const a = Math.min(1, toastT/0.5);
+  g.save();
+  g.font = '600 20px "Yu Gothic UI","Hiragino Maru Gothic ProN",sans-serif';
+  g.textAlign = 'center';
+  const w = g.measureText(toastMsg).width + 34;
+  const x = W/2, y = 26;
+  g.globalAlpha = a*0.5; g.fillStyle = '#0d1512';
+  rr(g, x-w/2, y-4, w, 38, 12); g.fill();
+  g.globalAlpha = a*0.85; g.strokeStyle = toastCol; g.lineWidth = 2;
+  rr(g, x-w/2, y-4, w, 38, 12); g.stroke();
+  g.globalAlpha = a; g.fillStyle = toastCol;
+  g.fillText(toastMsg, x, y+23);
+  g.restore();
+}
+
 let starSeed = [];
 function drawStars(g, time){
   if(starSeed.length === 0)
@@ -2186,13 +2365,19 @@ function drawStars(g, time){
 /* ============================================================
    道具
    ============================================================ */
+/* タッチでも確実に反応するように、pointerdown で拾う（click は保険） */
+function tap(el, fn){
+  let done = false;
+  el.addEventListener('pointerdown', e=>{ done = true; e.preventDefault(); fn(); });
+  el.addEventListener('click', ()=>{ if(done){ done = false; return; } fn(); });
+}
 const chalksEl = document.getElementById('chalks');
 COLORS.forEach((c,i)=>{
   const b = document.createElement('button');
   b.className = 'chalk' + (i===0?' on':'');
   b.style.background = 'linear-gradient(#fff8, transparent 40%), ' + c.css;
   b.title = c.name + 'チョーク (' + (i+1) + ')';
-  b.onclick = ()=> setColor(i);
+  tap(b, ()=> setColor(i));
   chalksEl.appendChild(b);
 });
 function setColor(i){
@@ -2200,6 +2385,7 @@ function setColor(i){
   document.body.classList.remove('erasing');
   [...chalksEl.children].forEach((el,n)=> el.classList.toggle('on', n===i));
   document.getElementById('eraser').classList.remove('on');
+  toast(COLORS[i].name + 'のチョーク', COLORS[i].css);
 }
 function setEraser(on){
   erasing = on;
@@ -2208,20 +2394,22 @@ function setEraser(on){
   if(on) [...chalksEl.children].forEach(el=> el.classList.remove('on'));
   else setColor(colorIdx);
 }
-document.getElementById('eraser').onclick = ()=> setEraser(!erasing);
+tap(document.getElementById('eraser'), ()=>{ setEraser(!erasing); if(erasing) toast('黒板消し', '#e6e0d0'); });
 document.getElementById('size').oninput = e=>{ brush = +e.target.value; };
 document.getElementById('life').oninput = e=>{
   userLife = +e.target.value;
   document.getElementById('lifeNum').textContent = userLife + '秒';
 };
 const bgmBtn = document.getElementById('bgm');
-bgmBtn.onclick = ()=>{
+function toggleBgm(){
   const on = Music.toggle();
   bgmBtn.classList.toggle('on', on);
   bgmBtn.textContent = on ? '♪' : '♪̸';
   bgmBtn.title = on ? 'BGMを止める (B)' : 'BGMを鳴らす (B)';
-};
-document.getElementById('night').onclick = toggleNight;
+  toast(on ? 'BGM オン' : 'BGM オフ', '#e6e0d0');
+}
+tap(bgmBtn, toggleBgm);
+tap(document.getElementById('night'), toggleNight);
 function toggleNight(){
   night = !night;
   const b = document.getElementById('night');
@@ -2233,20 +2421,22 @@ function toggleNight(){
     else if(!night && Math.random()<0.5) speak(k, 'おはよう');
   }
 }
-document.getElementById('clear').onclick = ()=>{
+tap(document.getElementById('clear'), ()=>{
   for(let i=strokes.length-1;i>=0;i--) killStroke(strokes[i]);
   for(const k of kobitos) k.doodle = null;
   for(let i=0;i<80;i++) dust(rnd(0,W), rnd(0,H), 1, '#d8d2c0');
-};
-document.getElementById('save').onclick = ()=>{
+  toast('全部消しました', '#e6e0d0');
+});
+tap(document.getElementById('save'), ()=>{
   const c = document.createElement('canvas');
   c.width = view.width; c.height = view.height;
   c.getContext('2d').drawImage(view, 0, 0);
   const a = document.createElement('a');
   a.download = 'kobito-board.png'; a.href = c.toDataURL('image/png'); a.click();
-};
+  toast('画像を保存しました', '#e6e0d0');
+});
 const helpEl = document.getElementById('help');
-document.getElementById('helpbtn').onclick = ()=> helpEl.classList.add('open');
+tap(document.getElementById('helpbtn'), ()=> helpEl.classList.add('open'));
 helpEl.onclick = e=>{ if(e.target === helpEl) helpEl.classList.remove('open'); };
 
 window.addEventListener('keydown', e=>{
