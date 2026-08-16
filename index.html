@@ -190,11 +190,15 @@
         登っている途中で消えると、小人は落ちます</li>
   </ul>
 
-  <h3>BGM</h3>
+  <h3>音</h3>
   <ul>
     <li>やわらかい環境音楽が流れます。音源ファイルは使わず、
         <b>その場で音を合成しています</b>（同じ旋律はくり返しません）。</li>
-    <li>右下の <b>♪</b> ボタン（キーは <kbd>B</kbd>）で入／切。
+    <li>🐦 <b>小鳥のさえずり</b> — 線にとまった小鳥がときどき鳴きます。
+        飛びながら遠くで鳴くこともあります。おどろかせると鳴きながら飛び立ちます。</li>
+    <li>☂ <b>雨の音</b> — 雲をタップして雨が降ると、降っている量に合わせて雨音が鳴り、
+        やむと静かに消えます。</li>
+    <li>右下の <b>♪</b> ボタン（キーは <kbd>B</kbd>）で音の入／切。
         ブラウザの決まりで、<b>最初に画面をさわった時点から</b>鳴りはじめます。</li>
     <li>消灯すると、音も少し暗くゆっくりになります。</li>
   </ul>
@@ -648,11 +652,21 @@ function updateFires(dt){
     f.y = (hitY === null) ? ny : hitY;
     flame(f.x, f.y - f.vy*0.4, 4, true);
     if(Math.random() < 0.6) smoke(f.x + rnd(-6,6), f.y - 12, 1);
-    for(const k of kobitos){                      // 小人が逃げる
-      if(Math.abs(k.x - f.x) < 90 && Math.abs(k.y - f.y) < 150 && k.grounded && Math.random() < 0.06){
-        k.state = 'run'; k.t = 60;
-        if(Math.random() < 0.3) speak(k, pick(['あつい！','にげろー','わー！']));
+
+    // 火の玉は小人の上には乗らない（すり抜ける）。かわりに小人が身をかわす
+    const danger = 52 + f.r*f.g;
+    for(const k of kobitos){
+      if(k.y < f.y - 4) continue;                 // 火の玉より上の小人は関係ない
+      if(Math.abs(k.x - f.x) > danger) continue;
+      if(k.climb){                                // 登っていたら手をはなして飛びおりる
+        k.climb = null; k.grounded = false; k.state = 'fall';
+        k.vy = 0.5; k.climbCool = 90;
       }
+      k.dodge = Math.max(k.dodge, 45);
+      k.dodgeDir = (k.x < f.x) ? -1 : 1;
+      if(k.x < 12) k.dodgeDir = 1;
+      if(k.x > W-12) k.dodgeDir = -1;
+      if(k.sayT <= 0 && Math.random() < 0.06) speak(k, pick(['あつい！','にげろー','わー！','よけろー']));
     }
     if(hitY !== null || f.y >= FLOOR){
       burnAt(f.x, Math.min(f.y, FLOOR), f.r*f.g);
@@ -707,9 +721,13 @@ function updateBlazes(dt){
       eraseAt(b.x + Math.cos(a)*d, b.y + Math.sin(a)*d - b.r*0.3, b.r*0.4);
       scorch(b.x, b.y, b.r*1.1);
     }
-    for(const k of kobitos){                          // 近づいた小人は引き返す
-      if(k.grounded && Math.abs(k.x-b.x) < b.r*1.7 && Math.abs(k.y-b.y) < b.r*2.2){
-        if(k.back <= 0){ k.back = rnd(40,90); if(Math.random()<0.25) speak(k, pick(['あぶない！','とおれない','あついよ']));}
+    for(const k of kobitos){                          // 燃えている所には近づかず、離れる向きへ
+      if(k.grounded && Math.abs(k.x-b.x) < b.r*1.8 && Math.abs(k.y-b.y) < b.r*2.4){
+        k.dodge = Math.max(k.dodge, 30);
+        k.dodgeDir = (k.x < b.x) ? -1 : 1;
+        if(k.x < 12) k.dodgeDir = 1;
+        if(k.x > W-12) k.dodgeDir = -1;
+        if(k.sayT <= 0 && Math.random() < 0.02) speak(k, pick(['あぶない！','とおれない','あついよ']));
       }
     }
     if(b.t >= b.life){
@@ -1454,6 +1472,10 @@ function drawRainbow(g){
    小鳥
    ============================================================ */
 const birds = [];
+function sing(b, soft){                       // 見た目の♪と、さえずりの音
+  note(b.x + rnd(-6,6), b.y - rnd(8,14));
+  Music.chirp(clamp((b.x/Math.max(1,W))*2-1, -1, 1), soft);
+}
 function makeBird(){
   const dir = Math.random()<0.5 ? 1 : -1;
   return {
@@ -1467,6 +1489,7 @@ function tapBird(b){
   b.state = 'startle'; b.startle = 1; b.vy = -4.4; b.vx = (b.x < W/2 ? 1 : -1) * rnd(1.6,2.6);
   b.dir = b.vx > 0 ? 1 : -1;
   for(let i=0;i<3;i++) note(b.x+rnd(-8,8), b.y+rnd(-8,4));
+  Music.chirp(clamp((b.x/Math.max(1,W))*2-1, -1, 1));
   spark(b.x, b.y, 6, '#f4f1e6');
 }
 /* ---------- 指でつかまえる・はなす ---------- */
@@ -1579,7 +1602,7 @@ function updateBirds(dt){
       b.f = 0;
       if(!solidAt(b.x, b.y + 7*b.sc)) { b.state='fly'; b.vy = -1.2; b.vx = b.dir*rnd(.8,1.5); }
       else if(b.t <= 0){ b.state='fly'; b.vy = -2.2; b.vx = b.dir*rnd(.8,1.5); b.t = rnd(240,600); }
-      else if(Math.random() < 0.004) note(b.x, b.y-12);
+      else if(Math.random() < 0.005) sing(b);          // とまって さえずる
       continue;
     }
     if(b.state === 'startle'){
@@ -1599,6 +1622,7 @@ function updateBirds(dt){
       b.f += 0.34;
       b.vy += Math.sin(b.f*0.24)*0.06;
       b.vy = clamp(b.vy*0.985, -1.6, 1.6);
+      if(!night && Math.random() < 0.0022) sing(b, true);   // 飛びながら遠くで さえずる
       // ときどき線の上にとまりにいく
       if(!night && b.t <= 0 && Math.random() < 0.02){
         const tx = clamp(b.x + b.dir*rnd(40,160), 20, W-20);
@@ -1668,7 +1692,8 @@ function makeKobito(fromSky){
     state: fromSky ? 'fall' : 'walk', t: 60, phase: rnd(0,6.283),
     speed: rnd(0.30,0.44), grounded:false, seed: rnd(0,997),
     say:null, sayT:0, doodle:null, back:0, wear: pick(HATS),
-    climb:null, cdir:-1, cspd:0, climbCool:0, cGrace:0
+    climb:null, cdir:-1, cspd:0, climbCool:0, cGrace:0,
+    dodge:0, dodgeDir:1
   };
 }
 function spawnKobito(){
@@ -1841,13 +1866,18 @@ function updateKobito(k){
   if(k.state === 'climb'){ updateClimb(k); return; }
   if(tryClimb(k)) return;
 
-  if(k.state === 'draw'){
+  if(k.dodge > 0){                       // 火から逃げている最中
+    k.dodge--;
+    if(k.grounded && k.state !== 'jump' && k.state !== 'fall'){
+      k.state = 'run'; k.t = Math.max(k.t, 10); k.doodle = null;
+    }
+  }else if(k.state === 'draw'){
     if(k.t % 3 === 0) stepDoodle(k);
   }else if(k.grounded && k.t <= 0){
     chooseAction(k);
   }
 
-  k.dir = (k.back > 0) ? -1 : 1;
+  k.dir = (k.dodge > 0) ? k.dodgeDir : ((k.back > 0) ? -1 : 1);
 
   // 横移動
   k.vx = 0;
@@ -2265,7 +2295,7 @@ window.addEventListener('blur', ()=>{
    ペンタトニックの音だけを、ゆっくり、重ねて鳴らします
    ============================================================ */
 const Music = (function(){
-  let ctx=null, master=null, wet=null, lp=null, droneG=null;
+  let ctx=null, master=null, wet=null, lp=null, droneG=null, rainG=null;
   let ready=false, running=false, want=true, next=2;
   const ROOT = 53;                       // F3
   const SCALE = [0,2,4,7,9];             // ペンタトニック（濁らない）
@@ -2287,8 +2317,12 @@ const Music = (function(){
     try{ ctx = new AC(); }catch(e){ return; }
 
     master = ctx.createGain(); master.gain.value = 0.0001;
-    lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 1500; lp.Q.value = 0.25;
-    master.connect(lp); lp.connect(ctx.destination);
+    lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 1150; lp.Q.value = 0.25;
+    // 出口に圧縮をかけて、突然の大きい音・かん高い音が刺さらないようにする
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -24; comp.knee.value = 24; comp.ratio.value = 8;
+    comp.attack.value = 0.005; comp.release.value = 0.35;
+    master.connect(lp); lp.connect(comp); comp.connect(ctx.destination);
 
     const conv = ctx.createConvolver(); conv.buffer = makeIR(3.8, 2.6);
     wet = ctx.createGain(); wet.gain.value = 0.5;
@@ -2296,8 +2330,21 @@ const Music = (function(){
 
     // ゆっくり呼吸するフィルタ
     const lfo = ctx.createOscillator(); lfo.type='sine'; lfo.frequency.value = 0.042;
-    const lg  = ctx.createGain(); lg.gain.value = 420;
+    const lg  = ctx.createGain(); lg.gain.value = 260;
     lfo.connect(lg); lg.connect(lp.frequency); lfo.start();
+
+    // 雨の音（白い雑音をろ過して作る。降っている量に合わせて鳴らす）
+    const nlen = Math.floor(ctx.sampleRate*2);
+    const nbuf = ctx.createBuffer(1, nlen, ctx.sampleRate);
+    const nd = nbuf.getChannelData(0);
+    for(let i=0;i<nlen;i++) nd[i] = Math.random()*2-1;
+    const nsrc = ctx.createBufferSource(); nsrc.buffer = nbuf; nsrc.loop = true;
+    const nhp = ctx.createBiquadFilter(); nhp.type='highpass'; nhp.frequency.value = 420;
+    const nlp = ctx.createBiquadFilter(); nlp.type='lowpass';  nlp.frequency.value = 2200; nlp.Q.value = 0.4;
+    rainG = ctx.createGain(); rainG.gain.value = 0.0001;
+    nsrc.connect(nhp); nhp.connect(nlp); nlp.connect(rainG);
+    rainG.connect(master); rainG.connect(wet);
+    nsrc.start();
 
     // 低いドローン（土台の音）
     droneG = ctx.createGain(); droneG.gain.value = 0.055;
@@ -2317,11 +2364,15 @@ const Music = (function(){
   }
   function voice(freq, dur, amp, pan, dark, delay){
     const t = ctx.currentTime + (delay||0);
+    // 高い音ほど小さく、倍音も減らす（耳に刺さらないように）
+    const hi = Math.min(1, Math.max(0.35, 480/freq));
+    amp *= hi;
     const o  = ctx.createOscillator(); o.type='sine';     o.frequency.value = freq;
     const o2 = ctx.createOscillator(); o2.type='triangle'; o2.frequency.value = freq*2.001;
-    const g2 = ctx.createGain(); g2.gain.value = 0.14;
+    const g2 = ctx.createGain(); g2.gain.value = 0.10*hi*hi;
     const g  = ctx.createGain();  g.gain.value = 0.0001;
-    const f  = ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value = dark ? 640 : 1150;
+    const f  = ctx.createBiquadFilter(); f.type='lowpass';
+    f.frequency.value = Math.min(dark ? 600 : 1000, freq*2.1);
     o.connect(g); o2.connect(g2); g2.connect(g); g.connect(f);
     let out = f;
     if(ctx.createStereoPanner){ const p = ctx.createStereoPanner(); p.pan.value = pan; f.connect(p); out = p; }
@@ -2350,22 +2401,53 @@ const Music = (function(){
       master.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.9);
     }
   }
+  /* 小鳥のさえずり（短い音を2〜3回） */
+  function chirp(pan, soft){
+    if(!running || !ready) return;
+    const t0 = ctx.currentTime;
+    const n = 2 + ((Math.random()*2)|0);
+    const base = 1250 + Math.random()*550;
+    for(let i=0;i<n;i++){
+      const t = t0 + i*(0.085 + Math.random()*0.05);
+      const o = ctx.createOscillator(); o.type = 'sine';
+      const g = ctx.createGain(); g.gain.value = 0.0001;
+      const f = ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value = 2400;
+      const amp = (soft ? 0.016 : 0.030) * (1 - i*0.18);
+      const b = base * (1 + i*0.06);
+      o.frequency.setValueAtTime(b*0.9, t);
+      o.frequency.exponentialRampToValueAtTime(b*1.35, t+0.045);
+      o.frequency.exponentialRampToValueAtTime(b*0.95, t+0.11);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(amp, t+0.022);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+0.15);
+      o.connect(g); g.connect(f);
+      let out = f;
+      if(ctx.createStereoPanner){ const p = ctx.createStereoPanner(); p.pan.value = pan||0; f.connect(p); out = p; }
+      out.connect(master); out.connect(wet);
+      o.start(t); o.stop(t+0.2);
+    }
+  }
   return {
     isOn: ()=> want,
     toggle(){ setOn(!want); return want; },
     kick(){ if(want && !running) setOn(true); else if(ready && ctx.state==='suspended') ctx.resume(); },
+    chirp,
+    rain(level){                                   // 0〜1 の降り具合で雨音を鳴らす
+      if(!running || !ready || !rainG) return;
+      rainG.gain.setTargetAtTime(0.0001 + Math.min(1,level)*0.085, ctx.currentTime, 0.7);
+    },
     tick(dt, dark){
       if(!running || !ready) return;
       if(droneG) droneG.gain.setTargetAtTime(dark ? 0.075 : 0.055, ctx.currentTime, 3);
       next -= dt;
       if(next > 0) return;
       next = rnd(dark ? 5.0 : 3.4, dark ? 11 : 7.5);
-      const oct = pick([0,0,0,12,12,24]);
+      const oct = pick([0,0,0,0,12,12]);            // 高すぎる音は使わない
       const n = ROOT + pick(SCALE) + oct;
       const pan = rnd(-0.65,0.65);
       voice(mtof(n), rnd(8,14), rnd(0.055,0.10), pan, dark, 0);
       if(Math.random() < 0.4){                                   // ときどき重ねる
-        const n2 = n + pick([7,12,-5,5,-12]);
+        const n2 = n + pick([7,-5,5,-12]);
         voice(mtof(n2), rnd(7,12), rnd(0.035,0.065), -pan*0.7, dark, rnd(0.6,2.4));
       }
     }
@@ -2400,6 +2482,7 @@ function frame(now){
   for(const k of kobitos) updateKobito(k);
   updateParts();
   Music.tick(dt, night);
+  Music.rain(Math.min(1, drops.length/70));
 
   // 背景
   vctx.setTransform(DPR,0,0,DPR,0,0);
