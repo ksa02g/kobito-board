@@ -31,7 +31,7 @@
       0 10px 26px rgba(0,0,0,.55);
     overflow:hidden;
   }
-  canvas{display:block; width:100%; height:100%; cursor:crosshair}
+  canvas{display:block; width:100%; height:100%; cursor:crosshair; touch-action:none}
   body.erasing canvas{cursor:cell}
 
   #tray{
@@ -110,6 +110,7 @@
     <span class="num" id="lifeNum">20秒</span>
   </div>
   <div class="grp">
+    <button class="b on" id="bgm" title="BGM (B)">♪</button>
     <button class="b" id="night" title="消灯 (L)">消灯</button>
     <button class="b" id="save"  title="画像で保存 (S)">保存</button>
     <button class="b" id="clear" title="線を全部消す (C)">全消し</button>
@@ -156,11 +157,21 @@
     <li>地面から草・花・双葉がひとりでに生えて、育って、しばらくすると枯れて消えます</li>
     <li><b>描いた線の上にも生えます</b>。その線が消えると、草花もいっしょに枯れます</li>
     <li>雨が降ると生えるのも育つのも速くなります</li>
-    <li>ときどき <b>つる（豆の木）</b> と <b>はしご</b> が現れます。
-        <b>小人はこれをよじ登ります。</b>てっぺんは葉っぱ／踏み板の足場になっていて、
+    <li><b>はしご</b>はときどきひとりでに現れます。
+        <b>豆の木は、シャボン玉から出たまめのたねが地面に落ちたときだけ生えます。</b></li>
+    <li><b>小人はどちらもよじ登ります。</b>てっぺんは葉っぱ／踏み板の足場になっていて、
         登りきった小人はよろこんだあと、また降りたり、落ちたりします</li>
     <li>つるもはしごも、しばらくすると枯れて（消えて）なくなります。
         登っている途中で消えると、小人は落ちます</li>
+  </ul>
+
+  <h3>BGM</h3>
+  <ul>
+    <li>やわらかい環境音楽が流れます。音源ファイルは使わず、
+        <b>その場で音を合成しています</b>（同じ旋律はくり返しません）。</li>
+    <li>右下の <b>♪</b> ボタン（キーは <kbd>B</kbd>）で入／切。
+        ブラウザの決まりで、<b>最初に画面をさわった時点から</b>鳴りはじめます。</li>
+    <li>消灯すると、音も少し暗くゆっくりになります。</li>
   </ul>
 
   <h3>キーボード</h3>
@@ -202,7 +213,7 @@ let userLife = 20;                    // 秒
 const DOODLE_LIFE = 60;               // 小人の落書きの寿命（秒）
 const FADE = 2.2;                     // 消えるのにかける秒数
 
-let tex = null, staticCv = null, liveCv = null, lctx = null;
+let tex = null, staticCv = null;
 const SPR = {};                       // 事前に描いておく絵（太陽・雲・小鳥）
 
 const rnd  = (a,b)=> a + Math.random()*(b-a);
@@ -219,18 +230,19 @@ function resize(){
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   if(w === W && h === H && dpr === DPR) return;
 
-  live = null; drawing = false;          // 描いている途中なら中断（判定がずれるため）
+  {                                      // 描いている途中の指があれば、そこで確定させる
+    for(const [id, P] of pointers){
+      if(P.mode === 'draw') finishStroke(P.s);
+      else if(P.mode === 'grab' && P.bird) P.bird.grabbedBy = null;
+      try{ view.releasePointerCapture(id); }catch(_){}
+    }
+    pointers.clear();
+  }
 
   W = w; H = h; DPR = dpr; FLOOR = H - 10;
   view.width = Math.round(w*dpr); view.height = Math.round(h*dpr);
   vctx.setTransform(dpr,0,0,dpr,0,0);
   vctx.lineJoin = vctx.lineCap = 'round';
-
-  liveCv = document.createElement('canvas');
-  liveCv.width = view.width; liveCv.height = view.height;
-  lctx = liveCv.getContext('2d');
-  lctx.setTransform(dpr,0,0,dpr,0,0);
-  lctx.lineJoin = lctx.lineCap = 'round';
 
   GW = Math.ceil(w/CELL); GH = Math.ceil(h/CELL);
   cover = new Uint16Array(GW*GH);
@@ -377,7 +389,7 @@ function newStroke(ox, oy, w, h, size, color, life){
 function pushStroke(s){
   strokes.push(s);
   while(strokes.length > MAXSTROKE){
-    const old = strokes.find(t => t.state !== 'fade');
+    const old = strokes.find(t => t.state === 'age');   // 描いている最中の線は消さない
     if(!old) break;
     old.state = 'fade'; old.fadeT = 0;
   }
@@ -430,48 +442,53 @@ function updateStrokes(dt){
 }
 function drawStrokes(g){
   for(const s of strokes){
-    if(s.state === 'live') continue;
     g.globalAlpha = s.alpha;
     g.drawImage(s.cv, s.ox, s.oy, s.w, s.h);
   }
   g.globalAlpha = 1;
 }
 
-/* ---------- ユーザーが描く（いったん liveCv に描いてから確定） ---------- */
-let live = null;   // {minX,minY,maxX,maxY,pts,size,color}
-
-function beginLive(x,y){
-  live = { minX:x, minY:y, maxX:x, maxY:y, pts:[{x,y}], size:brush, color:COLORS[colorIdx].css,
-           tmp: newStrokeShell() };
-  drawLiveSeg(x-0.01, y-0.01, x, y);
+/* ---------- ユーザーが描く（指ごとに自前のキャンバスへ直接描く） ---------- */
+const BOX = 60;                       // キャンバスを広げるときの余裕
+function boxOf(x0,y0,x1,y1){
+  const ax = Math.max(-20, x0), ay = Math.max(-20, y0);
+  const bx = Math.min(W+20, x1), by = Math.min(H+20, y1);
+  return { ox:ax, oy:ay, w:Math.max(2, bx-ax), h:Math.max(2, by-ay) };
 }
-function newStrokeShell(){                 // 判定セルだけ先に持つ入れ物
-  return { cells:new Set(), size:brush };
+function growStroke(s, x, y){
+  const pad = s.size*1.2 + 10;
+  if(x-pad >= s.ox && x+pad <= s.ox+s.w && y-pad >= s.oy && y+pad <= s.oy+s.h) return;
+  const b = boxOf(
+    Math.min(s.ox, x-pad-BOX), Math.min(s.oy, y-pad-BOX),
+    Math.max(s.ox+s.w, x+pad+BOX), Math.max(s.oy+s.h, y+pad+BOX));
+  const cv = document.createElement('canvas');
+  cv.width  = Math.max(1, Math.round(b.w*DPR));
+  cv.height = Math.max(1, Math.round(b.h*DPR));
+  const cx = cv.getContext('2d');
+  cx.setTransform(DPR,0,0,DPR, -b.ox*DPR, -b.oy*DPR);
+  cx.lineJoin = cx.lineCap = 'round';
+  cx.drawImage(s.cv, s.ox, s.oy, s.w, s.h);
+  s.cv = cv; s.cx = cx; s.ox = b.ox; s.oy = b.oy; s.w = b.w; s.h = b.h;
 }
-function drawLiveSeg(x0,y0,x1,y1){
-  chalkSeg(lctx, x0,y0,x1,y1, live.size, live.color);
-  markPath(live.tmp, x0,y0,x1,y1, Math.max(1.2, live.size*0.42), true);
-  live.minX = Math.min(live.minX,x0,x1); live.maxX = Math.max(live.maxX,x0,x1);
-  live.minY = Math.min(live.minY,y0,y1); live.maxY = Math.max(live.maxY,y0,y1);
+function beginStroke(x, y){
+  const half = brush*1.2 + 10 + BOX;
+  const b = boxOf(x-half, y-half, x+half, y+half);
+  const s = newStroke(b.ox, b.oy, b.w, b.h, brush, COLORS[colorIdx].css, userLife);
+  s.state = 'live';
+  s.pts.push({x, y});
+  pushStroke(s);
+  strokeSeg(s, x-0.01, y-0.01, x, y);
+  return s;
 }
-function commitLive(){
-  if(!live) return;
-  const pad = live.size*1.2 + 8;
-  const ox = Math.max(0, live.minX-pad), oy = Math.max(0, live.minY-pad);
-  const w  = Math.min(W, live.maxX+pad) - ox, h = Math.min(H, live.maxY+pad) - oy;
-  if(w > 0 && h > 0){
-    const s = newStroke(ox, oy, w, h, live.size, live.color, userLife);
-    s.cx.drawImage(liveCv, 0, 0, W, H);
-    s.pts = live.pts;
-    s.cells = live.tmp.cells;              // 判定セルを引き継ぐ
-    s.state = 'age';
-    pushStroke(s);
-  }else{
-    for(const idx of live.tmp.cells) if(cover[idx]>0) cover[idx]--;
-  }
-  lctx.save(); lctx.setTransform(1,0,0,1,0,0);
-  lctx.clearRect(0,0,liveCv.width,liveCv.height); lctx.restore();
-  live = null;
+function strokeSeg(s, x0, y0, x1, y1){
+  growStroke(s, x1, y1);
+  chalkSeg(s.cx, x0,y0, x1,y1, s.size, s.color);
+  markPath(s, x0,y0, x1,y1, Math.max(1.2, s.size*0.42), true);
+}
+function finishStroke(s){
+  if(!s) return;
+  if(s.pts.length < 2) s.pts.push({x: s.pts[0].x + 0.01, y: s.pts[0].y});
+  s.state = 'age'; s.age = 0;
 }
 /* ---------- 黒板消し ---------- */
 function eraseAt(x, y, r){
@@ -720,15 +737,16 @@ function setPlatform(c, on){
   }
 }
 function addClimber(kind){
-  if(climbers.length >= MAXCLIMB + 2) return;
+  if(climbers.length >= MAXCLIMB + 4) return;
   const x = rnd(40, Math.max(41, W-40));
-  climbers.push(kind === 'ladder' ? makeLadder(x) : makeVine(x));
+  climbers.push(kind === 'vine' ? makeVine(x) : makeLadder(x));
 }
 function updateClimbers(dt){
   climberTimer -= dt;
   if(climberTimer <= 0){
     climberTimer = rnd(9, 26);
-    if(climbers.length < MAXCLIMB) addClimber(Math.random()<0.5 ? 'ladder' : 'vine');
+    // ひとりでに現れるのは「はしご」だけ。豆の木はシャボン玉のたねからしか生えません
+    if(climbers.length < MAXCLIMB) addClimber('ladder');
   }
   for(let i=climbers.length-1;i>=0;i--){
     const c = climbers[i];
@@ -1210,7 +1228,7 @@ function makeBird(){
     x: dir>0 ? -30 : W+30, y: rnd(40, Math.max(60,H*0.5)),
     vx: dir*rnd(0.7,1.5), vy: 0, f: rnd(0,5), sc: rnd(0.85,1.25),
     state:'fly', t: rnd(120,420), dir, startle: 0,
-    caged: false, bump: 0, held: 0
+    caged: false, bump: 0, held: 0, grabbedBy: null
   };
 }
 function tapBird(b){
@@ -1868,8 +1886,6 @@ function rr(g,x,y,w,h,r){
 /* ============================================================
    入力（タップ判定 → なければ描画）
    ============================================================ */
-let drawing = false, lastX = 0, lastY = 0, pid = null;
-let grabbed = null, grabMoved = 0;
 
 function pos(e){
   const r = view.getBoundingClientRect();
@@ -1898,72 +1914,203 @@ function hitTest(x, y){
   }
   return false;
 }
+/* 指ごとに独立して扱う（マルチタッチ対応） */
+const pointers = new Map();
+function eraseR(){ return Math.max(16, brush*2.6); }
+
 view.addEventListener('pointerdown', e=>{
-  if(pid !== null) return;
+  Music.kick();                                  // 最初の操作で音を鳴らしはじめる（ブラウザの決まり）
+  if(pointers.has(e.pointerId)) return;
   const p = pos(e);
+  const P = { lastX:p.x, lastY:p.y };
+
   if(!erasing){
-    const b = birdAt(p.x, p.y);                 // 小鳥はつかまえられる
-    if(b){
-      pid = e.pointerId; try{ view.setPointerCapture(pid); }catch(_){}
-      grabbed = b; grabMoved = 0; lastX = p.x; lastY = p.y;
+    const b = birdAt(p.x, p.y);                  // 小鳥はつかまえられる
+    if(b && !b.grabbedBy){
+      P.mode = 'grab'; P.bird = b; P.moved = 0;
+      b.grabbedBy = e.pointerId;
       catchBird(b);
-      e.preventDefault(); return;
+    }else if(hitTest(p.x, p.y)){                 // 太陽・雲・シャボン玉・小人
+      e.preventDefault(); return;                // 反応するだけなので指は追わない
     }
-    if(hitTest(p.x, p.y)){ e.preventDefault(); return; }
   }
-  pid = e.pointerId; try{ view.setPointerCapture(pid); }catch(_){}
-  drawing = true; lastX = p.x; lastY = p.y;
-  if(erasing) eraseAt(p.x, p.y, Math.max(16, brush*2.6));
-  else beginLive(p.x, p.y);
+  if(!P.mode){
+    if(erasing){ P.mode = 'erase'; eraseAt(p.x, p.y, eraseR()); }
+    else       { P.mode = 'draw';  P.s = beginStroke(p.x, p.y); }
+  }
+  pointers.set(e.pointerId, P);
+  try{ view.setPointerCapture(e.pointerId); }catch(_){}
   e.preventDefault();
 });
+
 view.addEventListener('pointermove', e=>{
-  if(e.pointerId !== pid) return;
-  if(grabbed){                                   // つかんだ小鳥を運ぶ
-    const p = pos(e);
-    grabMoved += Math.hypot(p.x-lastX, p.y-lastY);
-    if(p.x > lastX+0.6) grabbed.dir = 1;
-    else if(p.x < lastX-0.6) grabbed.dir = -1;
-    grabbed.x = p.x; grabbed.y = p.y;
+  const P = pointers.get(e.pointerId);
+  if(!P) return;
+  const p = pos(e);
+
+  if(P.mode === 'grab'){
+    const b = P.bird;
+    P.moved += Math.hypot(p.x-P.lastX, p.y-P.lastY);
+    if(p.x > P.lastX+0.6) b.dir = 1;
+    else if(p.x < P.lastX-0.6) b.dir = -1;
+    b.x = p.x; b.y = p.y;
     if(Math.random() < 0.09) note(p.x+rnd(-12,12), p.y-12);
     if(Math.random() < 0.12) dust(p.x+rnd(-6,6), p.y+rnd(-4,4), 1, '#f4f1e6');
-    lastX = p.x; lastY = p.y;
-    e.preventDefault(); return;
   }
-  if(!drawing) return;
-  const p = pos(e);
-  if(erasing){
-    const r = Math.max(16, brush*2.6), d = Math.hypot(p.x-lastX, p.y-lastY);
+  else if(P.mode === 'erase'){
+    const r = eraseR(), d = Math.hypot(p.x-P.lastX, p.y-P.lastY);
     const n = Math.max(1, Math.ceil(d/(r*0.5)));
-    for(let i=1;i<=n;i++) eraseAt(lastX+(p.x-lastX)*i/n, lastY+(p.y-lastY)*i/n, r);
-  }else if(live){
-    drawLiveSeg(lastX, lastY, p.x, p.y);
-    live.pts.push({x:p.x, y:p.y});
-    if(Math.random()<0.4) dust(p.x, p.y, 1, live.color);
+    for(let i=1;i<=n;i++) eraseAt(P.lastX+(p.x-P.lastX)*i/n, P.lastY+(p.y-P.lastY)*i/n, r);
+  }
+  else if(P.mode === 'draw' && P.s){
+    const s = P.s;
+    strokeSeg(s, P.lastX, P.lastY, p.x, p.y);
+    s.pts.push({x:p.x, y:p.y});
+    if(Math.random() < 0.4) dust(p.x, p.y, 1, s.color);
     for(const k of kobitos){
       if(Math.hypot(k.x-p.x, k.y-p.y) < 120 && Math.random() < 0.01 && k.grounded){
         k.state = 'run'; k.t = 50; if(Math.random()<0.4) speak(k);
       }
     }
   }
-  lastX = p.x; lastY = p.y;
+  P.lastX = p.x; P.lastY = p.y;
   e.preventDefault();
 });
-function endStroke(e){
-  if(e && pid !== null && e.pointerId !== pid) return;
-  if(grabbed){
-    releaseBird(grabbed, grabMoved);
-    grabbed = null;
-    if(pid !== null){ try{ view.releasePointerCapture(pid); }catch(_){} pid = null; }
-    return;
+
+function endPointer(e){
+  const P = pointers.get(e.pointerId);
+  if(!P) return;
+  pointers.delete(e.pointerId);
+  try{ view.releasePointerCapture(e.pointerId); }catch(_){}
+  if(P.mode === 'grab'){
+    P.bird.grabbedBy = null;
+    releaseBird(P.bird, P.moved);
+  }else if(P.mode === 'draw'){
+    finishStroke(P.s);
   }
-  if(!drawing) return;
-  drawing = false;
-  if(pid !== null){ try{ view.releasePointerCapture(pid); }catch(_){} pid = null; }
-  if(!erasing) commitLive();
 }
-view.addEventListener('pointerup', endStroke);
-view.addEventListener('pointercancel', endStroke);
+view.addEventListener('pointerup', endPointer);
+view.addEventListener('pointercancel', endPointer);
+window.addEventListener('blur', ()=>{
+  for(const [id, P] of pointers){
+    if(P.mode === 'grab'){ P.bird.grabbedBy = null; releaseBird(P.bird, P.moved); }
+    else if(P.mode === 'draw') finishStroke(P.s);
+    try{ view.releasePointerCapture(id); }catch(_){}
+  }
+  pointers.clear();
+});
+
+/* ============================================================
+   BGM — その場で音を合成しています（音源ファイル不要）
+   ペンタトニックの音だけを、ゆっくり、重ねて鳴らします
+   ============================================================ */
+const Music = (function(){
+  let ctx=null, master=null, wet=null, lp=null, droneG=null;
+  let ready=false, running=false, want=true, next=2;
+  const ROOT = 53;                       // F3
+  const SCALE = [0,2,4,7,9];             // ペンタトニック（濁らない）
+  const mtof = m => 440*Math.pow(2,(m-69)/12);
+
+  function makeIR(sec, decay){
+    const rate = ctx.sampleRate, len = Math.floor(rate*sec);
+    const buf = ctx.createBuffer(2, len, rate);
+    for(let ch=0; ch<2; ch++){
+      const d = buf.getChannelData(ch);
+      for(let i=0;i<len;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/len, decay);
+    }
+    return buf;
+  }
+  function init(){
+    if(ready) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    try{ ctx = new AC(); }catch(e){ return; }
+
+    master = ctx.createGain(); master.gain.value = 0.0001;
+    lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 1500; lp.Q.value = 0.25;
+    master.connect(lp); lp.connect(ctx.destination);
+
+    const conv = ctx.createConvolver(); conv.buffer = makeIR(3.8, 2.6);
+    wet = ctx.createGain(); wet.gain.value = 0.5;
+    wet.connect(conv); conv.connect(master);
+
+    // ゆっくり呼吸するフィルタ
+    const lfo = ctx.createOscillator(); lfo.type='sine'; lfo.frequency.value = 0.042;
+    const lg  = ctx.createGain(); lg.gain.value = 420;
+    lfo.connect(lg); lg.connect(lp.frequency); lfo.start();
+
+    // 低いドローン（土台の音）
+    droneG = ctx.createGain(); droneG.gain.value = 0.055;
+    const df = ctx.createBiquadFilter(); df.type='lowpass'; df.frequency.value = 380;
+    droneG.connect(df); df.connect(master); df.connect(wet);
+    [ROOT-24, ROOT-12, ROOT-12+7].forEach((m,i)=>{
+      const o = ctx.createOscillator();
+      o.type = i===2 ? 'sine' : 'triangle';
+      o.frequency.value = mtof(m) * (1 + (i-1)*0.0015);   // わずかにずらしてうねらせる
+      const g = ctx.createGain(); g.gain.value = i===2 ? 0.22 : 0.5;
+      o.connect(g); g.connect(droneG); o.start();
+      const w = ctx.createOscillator(); w.frequency.value = 0.03 + i*0.017;
+      const wg = ctx.createGain(); wg.gain.value = 0.9;
+      w.connect(wg); wg.connect(o.detune); w.start();
+    });
+    ready = true;
+  }
+  function voice(freq, dur, amp, pan, dark, delay){
+    const t = ctx.currentTime + (delay||0);
+    const o  = ctx.createOscillator(); o.type='sine';     o.frequency.value = freq;
+    const o2 = ctx.createOscillator(); o2.type='triangle'; o2.frequency.value = freq*2.001;
+    const g2 = ctx.createGain(); g2.gain.value = 0.14;
+    const g  = ctx.createGain();  g.gain.value = 0.0001;
+    const f  = ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value = dark ? 640 : 1150;
+    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(f);
+    let out = f;
+    if(ctx.createStereoPanner){ const p = ctx.createStereoPanner(); p.pan.value = pan; f.connect(p); out = p; }
+    out.connect(master); out.connect(wet);
+    const atk = dur*0.34;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(amp, t+atk);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    o.frequency.setValueAtTime(freq, t);
+    o.frequency.linearRampToValueAtTime(freq*1.0015, t+dur);
+    o.start(t); o2.start(t);
+    o.stop(t+dur+0.3); o2.stop(t+dur+0.3);
+  }
+  function setOn(v){
+    want = v;
+    if(v){
+      init();
+      if(!ready) return;
+      if(ctx.state === 'suspended') ctx.resume();
+      running = true;
+      master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.setTargetAtTime(0.17, ctx.currentTime, 1.6);   // そっと立ち上がる
+    }else if(ready){
+      running = false;
+      master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.9);
+    }
+  }
+  return {
+    isOn: ()=> want,
+    toggle(){ setOn(!want); return want; },
+    kick(){ if(want && !running) setOn(true); else if(ready && ctx.state==='suspended') ctx.resume(); },
+    tick(dt, dark){
+      if(!running || !ready) return;
+      if(droneG) droneG.gain.setTargetAtTime(dark ? 0.075 : 0.055, ctx.currentTime, 3);
+      next -= dt;
+      if(next > 0) return;
+      next = rnd(dark ? 5.0 : 3.4, dark ? 11 : 7.5);
+      const oct = pick([0,0,0,12,12,24]);
+      const n = ROOT + pick(SCALE) + oct;
+      const pan = rnd(-0.65,0.65);
+      voice(mtof(n), rnd(8,14), rnd(0.055,0.10), pan, dark, 0);
+      if(Math.random() < 0.4){                                   // ときどき重ねる
+        const n2 = n + pick([7,12,-5,5,-12]);
+        voice(mtof(n2), rnd(7,12), rnd(0.035,0.065), -pan*0.7, dark, rnd(0.6,2.4));
+      }
+    }
+  };
+})();
 
 /* ============================================================
    ループ
@@ -1991,6 +2138,7 @@ function frame(now){
   updateBubbles(dt);
   for(const k of kobitos) updateKobito(k);
   updateParts();
+  Music.tick(dt, night);
 
   // 背景
   vctx.setTransform(DPR,0,0,DPR,0,0);
@@ -2003,7 +2151,6 @@ function frame(now){
 
   vctx.drawImage(staticCv, 0, 0, W, H);
   drawStrokes(vctx);
-  if(live) vctx.drawImage(liveCv, 0, 0, W, H);
 
   drawPlants(vctx, time);
   drawClimbers(vctx, time);
@@ -2067,6 +2214,13 @@ document.getElementById('life').oninput = e=>{
   userLife = +e.target.value;
   document.getElementById('lifeNum').textContent = userLife + '秒';
 };
+const bgmBtn = document.getElementById('bgm');
+bgmBtn.onclick = ()=>{
+  const on = Music.toggle();
+  bgmBtn.classList.toggle('on', on);
+  bgmBtn.textContent = on ? '♪' : '♪̸';
+  bgmBtn.title = on ? 'BGMを止める (B)' : 'BGMを鳴らす (B)';
+};
 document.getElementById('night').onclick = toggleNight;
 function toggleNight(){
   night = !night;
@@ -2097,6 +2251,7 @@ helpEl.onclick = e=>{ if(e.target === helpEl) helpEl.classList.remove('open'); }
 
 window.addEventListener('keydown', e=>{
   if(e.metaKey || e.ctrlKey || e.altKey) return;
+  Music.kick();
   const k = e.key;
   if(k>='1' && k<='5') setColor(+k-1);
   else if(k==='e'||k==='E') setEraser(!erasing);
@@ -2110,6 +2265,7 @@ window.addEventListener('keydown', e=>{
   else if(k==='l'||k==='L') toggleNight();
   else if(k==='s'||k==='S') document.getElementById('save').click();
   else if(k==='c'||k==='C') document.getElementById('clear').click();
+  else if(k==='b'||k==='B') bgmBtn.click();
   else if(k==='h'||k==='H'){ document.body.classList.toggle('hideui'); layoutTray(); }
   else if(k==='?'||k==='/') helpEl.classList.toggle('open');
   else if(k==='Escape') helpEl.classList.remove('open');
