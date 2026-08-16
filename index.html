@@ -145,9 +145,10 @@
     <li>🫧 <b>シャボン玉</b> — <b>割れて、中に入っていたものが出てきます</b>。
         小人・小鳥・<b>まめのたね</b>・<b>火の玉</b>・星・音符・魚・ハートのどれか。
         <b>たねが地面に落ちると、そこからジャックと豆の木がぐんぐん伸びます</b></li>
-    <li>🔥 <b>火の玉</b> — シャボン玉から出ると<b>そのまま落ちていきます</b>。
-        当たったところのチョークの線を焼き切り、草花や豆の木も燃やします。
-        小人はあわてて逃げます</li>
+    <li>🔥 <b>火の玉</b> — シャボン玉から出ると<b>ふくらみながら落ちていきます</b>。
+        落ちたところで <b>6〜11秒ほど炎が燃えつづけ</b>、そのあいだ
+        まわりのチョークの線をじわじわ焼き広げ、草花や豆の木も枯らします。
+        小人はあわてて逃げ、燃えている場所には近づきません</li>
     <li>🐦 <b>小鳥</b> — 指でつまんだまま運べます。線や地面の上ではなすとそこにとまり、
         空ではなすと飛んでいきます。ちょんと触っただけならおどろいて飛び立ちます</li>
     <li>🚶 <b>小人</b> — びっくりしてジャンプします</li>
@@ -577,12 +578,31 @@ function drawParts(g){
   g.globalAlpha = 1;
 }
 
-/* ---------- 火の玉（シャボン玉から落ちてくる） ---------- */
-const fires = [];
+/* ---------- 火の玉（シャボン玉から落ちてくる）と、落ちたあとの炎 ---------- */
+const fires = [], blazes = [];
+
+function tongue(g, x, y, w, h, col, alpha){        // 炎のかたち
+  g.globalAlpha = alpha; g.fillStyle = col;
+  g.beginPath();
+  g.moveTo(x - w*0.5, y);
+  g.bezierCurveTo(x - w*0.62, y - h*0.5, x - w*0.28, y - h*0.72, x, y - h);
+  g.bezierCurveTo(x + w*0.28, y - h*0.72, x + w*0.62, y - h*0.5, x + w*0.5, y);
+  g.quadraticCurveTo(x, y + h*0.14, x - w*0.5, y);
+  g.closePath(); g.fill();
+}
+function glow(g, x, y, r, a){
+  const gr = g.createRadialGradient(x, y, 1, x, y, r);
+  gr.addColorStop(0,   'rgba(255,225,160,'+(0.5*a)+')');
+  gr.addColorStop(0.35,'rgba(255,150,70,'+(0.22*a)+')');
+  gr.addColorStop(1,   'rgba(255,90,40,0)');
+  g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
+}
+
 function updateFires(dt){
   for(let i=fires.length-1;i>=0;i--){
     const f = fires[i];
     f.ph += dt*14;
+    f.g = Math.min(1, f.g + dt*2.4);              // シャボン玉から出て、ふくらむ
     f.vy = Math.min(f.vy + 0.36, 13);
     f.vx *= 0.99;
     const ny = f.y + f.vy;
@@ -592,52 +612,105 @@ function updateFires(dt){
     }
     f.x += f.vx;
     f.y = (hitY === null) ? ny : hitY;
-    flame(f.x, f.y - f.vy*0.4, 2, true);
-    if(Math.random() < 0.4) smoke(f.x + rnd(-4,4), f.y - 8, 1);
+    flame(f.x, f.y - f.vy*0.4, 4, true);
+    if(Math.random() < 0.6) smoke(f.x + rnd(-6,6), f.y - 12, 1);
     for(const k of kobitos){                      // 小人が逃げる
-      if(Math.abs(k.x - f.x) < 70 && Math.abs(k.y - f.y) < 130 && k.grounded && Math.random() < 0.05){
+      if(Math.abs(k.x - f.x) < 90 && Math.abs(k.y - f.y) < 150 && k.grounded && Math.random() < 0.06){
         k.state = 'run'; k.t = 60;
         if(Math.random() < 0.3) speak(k, pick(['あつい！','にげろー','わー！']));
       }
     }
-    if(hitY !== null || f.y >= FLOOR){ burnAt(f.x, Math.min(f.y, FLOOR), f.r); fires.splice(i,1); }
+    if(hitY !== null || f.y >= FLOOR){
+      burnAt(f.x, Math.min(f.y, FLOOR), f.r*f.g);
+      fires.splice(i,1);
+    }
   }
+  updateBlazes(dt);
 }
+
 function burnAt(x, y, r){
-  const R = r*2.6;
-  flame(x, y, 34, true);
-  smoke(x, y-6, 12);
-  spark(x, y, 10, '#ffb15c');
-  for(let i=0;i<9;i++){                            // まわりのチョークを焼き切る
+  const R = r*1.5;
+  flame(x, y, 40, true);
+  smoke(x, y-8, 16);
+  spark(x, y, 16, '#ffb15c');
+  for(let i=0;i<10;i++){
     const a = rnd(0,6.2832), d = Math.sqrt(Math.random())*R;
-    eraseAt(x + Math.cos(a)*d, y + Math.sin(a)*d, r*1.1);
+    eraseAt(x + Math.cos(a)*d, y + Math.sin(a)*d, r*0.5);
   }
+  scorch(x, y, R*1.1);
+  blazes.push({ x, y, r0: r*0.95, r: r*0.95, t: 0,
+                life: rnd(6, 11), burn: 0.2, ph: rnd(0,6.28) });
+}
+/* 炎のまわりを焼く・枯らす・小人を追い払う */
+function scorch(x, y, R){
   for(const p of plants)
-    if(Math.hypot(p.x-x, p.y-y) < R*1.2 && p.state !== 'wither'){ p.state = 'wither'; p.wither = 0.2; }
-  for(const c of climbers)                         // 豆の木も燃えてしまう
-    if(Math.abs(c.x-x) < R && y > climbTop(c)-10 && c.state !== 'wither'){
+    if(Math.hypot(p.x-x, p.y-y) < R && p.state !== 'wither'){ p.state = 'wither'; p.wither = 0.15; }
+  for(const c of climbers)
+    if(Math.abs(c.x-x) < R*0.8 && y > climbTop(c)-10 && c.state !== 'wither'){
       c.state = 'wither'; c.wither = 0; setPlatform(c, false);
-      flame(c.x, y-20, 12, true);
+      flame(c.x, y-30, 16, true);
     }
   for(const k of kobitos)
-    if(Math.hypot(k.x-x, k.y-y) < R*1.6){
+    if(Math.hypot(k.x-x, k.y-y) < R){
       k.vy = -5.6*Math.sqrt(k.sc); k.grounded = false; k.state = 'jump'; k.t = 50; k.climb = null;
-      if(Math.random() < 0.8) speak(k, pick(['あちちち！','あついー！','たすけて〜','びっくりした']));
+      if(Math.random() < 0.5) speak(k, pick(['あちちち！','あついー！','たすけて〜','びっくりした']));
     }
+}
+function updateBlazes(dt){
+  for(let i=blazes.length-1;i>=0;i--){
+    const b = blazes[i];
+    b.t += dt; b.ph += dt*9;
+    const left = Math.max(0, 1 - b.t/b.life);
+    b.r = b.r0 * (0.3 + 0.7*left);
+
+    flame(b.x + rnd(-b.r*0.45, b.r*0.45), b.y - rnd(0,6), 1 + Math.round(b.r/12), true);
+    if(Math.random() < 0.55) smoke(b.x + rnd(-8,8), b.y - b.r*0.9, 1);
+
+    b.burn -= dt;
+    if(b.burn <= 0){                                  // じわじわ焼け広がる
+      b.burn = 0.3;
+      const a = rnd(0,6.2832), d = Math.sqrt(Math.random())*b.r*1.25;
+      eraseAt(b.x + Math.cos(a)*d, b.y + Math.sin(a)*d - b.r*0.3, b.r*0.4);
+      scorch(b.x, b.y, b.r*1.1);
+    }
+    for(const k of kobitos){                          // 近づいた小人は引き返す
+      if(k.grounded && Math.abs(k.x-b.x) < b.r*1.7 && Math.abs(k.y-b.y) < b.r*2.2){
+        if(k.back <= 0){ k.back = rnd(40,90); if(Math.random()<0.25) speak(k, pick(['あぶない！','とおれない','あついよ']));}
+      }
+    }
+    if(b.t >= b.life){
+      smoke(b.x, b.y-6, 10);
+      blazes.splice(i,1);
+    }
+  }
 }
 function drawFires(g, time){
   for(const f of fires){
-    const r = f.r*(1 + Math.sin(f.ph)*0.09);
+    const r = f.r*f.g*(1 + Math.sin(f.ph)*0.07);
     g.save();
-    const gr = g.createRadialGradient(f.x, f.y, 1, f.x, f.y, r*2.6);
-    gr.addColorStop(0,  'rgba(255,220,150,.55)');
-    gr.addColorStop(0.4,'rgba(255,140,60,.22)');
-    gr.addColorStop(1,  'rgba(255,90,40,0)');
-    g.fillStyle = gr; g.beginPath(); g.arc(f.x, f.y, r*2.6, 0, 6.2832); g.fill();
-    g.globalAlpha = 0.9; g.fillStyle = '#ff9d4d';
-    g.beginPath(); g.arc(f.x, f.y, r*0.82, 0, 6.2832); g.fill();
-    g.fillStyle = '#ffe9b0';
-    g.beginPath(); g.arc(f.x - r*0.12, f.y - r*0.18, r*0.46, 0, 6.2832); g.fill();
+    glow(g, f.x, f.y, r*2.4, 1);
+    const tail = Math.min(2.4, 0.9 + f.vy*0.10);
+    tongue(g, f.x, f.y + r*0.25, r*1.5, r*1.5*tail, '#ff7a35', 0.55);
+    tongue(g, f.x, f.y + r*0.15, r*1.1, r*1.15*tail, '#ff9d4d', 0.8);
+    g.globalAlpha = 0.95; g.fillStyle = '#ffd27a';
+    g.beginPath(); g.arc(f.x, f.y, r*0.62, 0, 6.2832); g.fill();
+    g.fillStyle = '#fff6dc';
+    g.beginPath(); g.arc(f.x - r*0.1, f.y - r*0.12, r*0.32, 0, 6.2832); g.fill();
+    g.restore();
+  }
+  for(const b of blazes){
+    const r = b.r;
+    g.save();
+    glow(g, b.x, b.y - r*0.5, r*3.0, 0.9);
+    for(let i=0;i<4;i++){
+      const ph = b.ph*(1 + i*0.23) + i*1.7;
+      const ox = Math.sin(ph*0.8 + i)*r*0.34;
+      const hh = r*(1.5 + Math.sin(ph)*0.3) * (1 - i*0.16);
+      const ww = r*(1.15 - i*0.14);
+      tongue(g, b.x + ox, b.y, ww, hh,
+             i<2 ? '#ff7a35' : (i===2 ? '#ffb15c' : '#ffe9b0'),
+             0.42 + i*0.13);
+    }
     g.restore();
   }
 }
@@ -999,8 +1072,8 @@ function popBubble(b, tapped){
     }
     case 'seed': seeds.push({x:b.x, y:b.y, vy:0.4}); break;
     case 'fire': {                                   // 火の玉が落ちる
-      fires.push({x:b.x, y:b.y, vx:rnd(-0.5,0.5), vy:0.6, r:rnd(9,14), ph:rnd(0,6.28)});
-      flame(b.x, b.y, 14, true);
+      fires.push({x:b.x, y:b.y, vx:rnd(-0.5,0.5), vy:0.6, r:rnd(28,42), g:0.3, ph:rnd(0,6.28)});
+      flame(b.x, b.y, 26, true);
       for(const k of kobitos)
         if(Math.abs(k.x-b.x) < 190 && Math.random() < 0.6)
           speak(k, pick(['あぶない！','ひのたま！','にげろー','あついよ！']));
