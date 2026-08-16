@@ -156,6 +156,9 @@
     <li>☀ <b>太陽</b> — ぱっと光ってまぶしくなり、小人たちがよろこびます</li>
     <li>☁ <b>雲</b> — 雨が降ります。地面や線にあたって跳ねます。やんだあと、たまに虹が出ます。
         雨のあいだは草花がぐんぐん育ちます</li>
+    <li>⚡ <b>雷</b> — 雲をつぎつぎタップして<b>雨を降らせつづける</b>と、だんだん空が暗くなり、
+        <b>稲妻が落ちます</b>。光ってから少し遅れて「ゴロゴロ」と鳴ります。
+        小人はとび上がっておどろき、小鳥はいっせいに飛び立ちます</li>
     <li>🫧 <b>シャボン玉</b> — <b>割れて、中に入っていたものが出てきます</b>。
         小人・小鳥・<b>まめのたね</b>・<b>火の玉</b>・星・音符・魚・ハートのどれか。
         <b>たねが地面に落ちると、そこからジャックと豆の木がぐんぐん伸びます</b></li>
@@ -1453,6 +1456,100 @@ function drawClouds(g){
     g.stroke(); g.restore();
   }
 }
+/* ---------- 雷（雨が降りつづくと落ちる） ---------- */
+const bolts = [];
+let storm = 0, stormNext = rnd(2,5), flash = 0;
+
+function boltPath(x0, y0, x1, y1, seg, spread){
+  const pts = [[x0, y0]];
+  for(let i=1;i<seg;i++){
+    const t = i/seg;
+    const wob = spread * (1 - Math.abs(t-0.5)*1.2);
+    pts.push([x0 + (x1-x0)*t + rnd(-wob, wob), y0 + (y1-y0)*t + rnd(-6,6)]);
+  }
+  pts.push([x1, y1]);
+  return pts;
+}
+function strike(){
+  const wet = clouds.filter(c => c.rain > 0);
+  const c = wet.length ? pick(wet) : pick(clouds);
+  if(!c) return;
+  const x0 = c.x + rnd(-cloudW(c)*0.25, cloudW(c)*0.25), y0 = c.y + cloudH(c)*0.2;
+
+  let hy = FLOOR;                                   // 落ちる先（線があればその線）
+  for(let y=Math.round(y0+16); y<FLOOR; y++) if(solidAt(x0, y)){ hy = y; break; }
+  const x1 = x0 + rnd(-24, 24);
+
+  const main = boltPath(x0, y0, x1, hy, 11, 26);
+  const br = [];
+  for(let i=0;i<2;i++){
+    const k = 3 + ((Math.random()*(main.length-5))|0);
+    const p = main[k];
+    br.push(boltPath(p[0], p[1], p[0] + rnd(-60,60), p[1] + rnd(30,90), 5, 14));
+  }
+  bolts.push({ main, br, t:0, life:0.55 });
+  flash = 1;
+
+  const near = hy > H*0.4;
+  Music.thunder(rnd(0.25, 0.9), near);
+
+  spark(x1, hy, 26, '#dff0ff');
+  for(let i=0;i<10;i++) dust(x1+rnd(-14,14), hy-rnd(0,8), 1, '#cfe6f5');
+
+  for(const b of birds) if(b.state !== 'held' && Math.random() < 0.85) tapBird(b);
+  for(const k of kobitos){
+    const d = Math.abs(k.x - x1);
+    if(d < 260){
+      if(k.grounded){ k.vy = -4.4*Math.sqrt(k.sc); k.grounded = false; k.state = 'jump'; k.t = 40; }
+      k.climb = null;
+      if(Math.random() < 0.7) speak(k, pick(['かみなり！','ひゃあ！','こわいよ〜','ゴロゴロだ','いまの見た？']));
+    }else if(Math.random() < 0.4){
+      speak(k, pick(['ひかった','ゴロゴロ…','あめ、つよいね']));
+    }
+  }
+  storm = Math.max(0, storm - 3.5);
+}
+function updateStorm(dt){
+  const raining = drops.length > 0;
+  storm = raining ? storm + dt : Math.max(0, storm - dt*1.6);
+  if(storm > 6){
+    stormNext -= dt;
+    if(stormNext <= 0){ strike(); stormNext = rnd(4, 11); }
+  }else{
+    stormNext = rnd(1.5, 4);
+  }
+  flash = Math.max(0, flash - dt*3.4);
+  for(let i=bolts.length-1;i>=0;i--){
+    bolts[i].t += dt;
+    if(bolts[i].t >= bolts[i].life) bolts.splice(i,1);
+  }
+}
+function strokePath(g, pts){
+  g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+  for(let i=1;i<pts.length;i++) g.lineTo(pts[i][0], pts[i][1]);
+  g.stroke();
+}
+function drawBolts(g){
+  for(const b of bolts){
+    const k = 1 - b.t/b.life;
+    const a = k * (0.5 + 0.5*Math.abs(Math.sin(b.t*44)));
+    g.save(); g.lineCap = 'round'; g.lineJoin = 'round';
+    g.strokeStyle = '#bfe0f5'; g.globalAlpha = a*0.28; g.lineWidth = 11;
+    strokePath(g, b.main);
+    g.globalAlpha = a*0.85; g.lineWidth = 3.6; strokePath(g, b.main);
+    g.strokeStyle = '#ffffff'; g.globalAlpha = a; g.lineWidth = 1.7; strokePath(g, b.main);
+    g.strokeStyle = '#dff0ff'; g.globalAlpha = a*0.7; g.lineWidth = 2.0;
+    for(const p of b.br) strokePath(g, p);
+    g.restore();
+  }
+}
+function drawFlash(g){
+  if(flash <= 0) return;
+  g.save();
+  g.globalAlpha = Math.min(1, flash) * 0.42;
+  g.fillStyle = '#cfe4ff'; g.fillRect(0,0,W,H);
+  g.restore();
+}
 function makeRainbow(){
   rainbow = { x: rnd(W*0.3, W*0.7), y: FLOOR, r: rnd(H*0.35, H*0.55), t: 0, life: 11 };
 }
@@ -2295,7 +2392,7 @@ window.addEventListener('blur', ()=>{
    ペンタトニックの音だけを、ゆっくり、重ねて鳴らします
    ============================================================ */
 const Music = (function(){
-  let ctx=null, master=null, wet=null, lp=null, droneG=null, rainG=null;
+  let ctx=null, master=null, wet=null, lp=null, droneG=null, rainG=null, NOISE=null;
   let ready=false, running=false, want=true, next=2;
   const ROOT = 53;                       // F3
   const SCALE = [0,2,4,7,9];             // ペンタトニック（濁らない）
@@ -2338,6 +2435,7 @@ const Music = (function(){
     const nbuf = ctx.createBuffer(1, nlen, ctx.sampleRate);
     const nd = nbuf.getChannelData(0);
     for(let i=0;i<nlen;i++) nd[i] = Math.random()*2-1;
+    NOISE = nbuf;
     const nsrc = ctx.createBufferSource(); nsrc.buffer = nbuf; nsrc.loop = true;
     const nhp = ctx.createBiquadFilter(); nhp.type='highpass'; nhp.frequency.value = 420;
     const nlp = ctx.createBiquadFilter(); nlp.type='lowpass';  nlp.frequency.value = 2200; nlp.Q.value = 0.4;
@@ -2411,8 +2509,8 @@ const Music = (function(){
       const t = t0 + i*(0.085 + Math.random()*0.05);
       const o = ctx.createOscillator(); o.type = 'sine';
       const g = ctx.createGain(); g.gain.value = 0.0001;
-      const f = ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value = 2400;
-      const amp = (soft ? 0.016 : 0.030) * (1 - i*0.18);
+      const f = ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value = 2700;
+      const amp = (soft ? 0.030 : 0.058) * (1 - i*0.18);
       const b = base * (1 + i*0.06);
       o.frequency.setValueAtTime(b*0.9, t);
       o.frequency.exponentialRampToValueAtTime(b*1.35, t+0.045);
@@ -2427,14 +2525,48 @@ const Music = (function(){
       o.start(t); o.stop(t+0.2);
     }
   }
+  /* 雷 — ゴロゴロという低い鳴り。delay 秒あとに鳴る（光ってから遅れて聞こえる） */
+  function thunder(delay, near){
+    if(!running || !ready || !NOISE) return;
+    const t = ctx.currentTime + (delay || 0);
+    const len = 2.6 + Math.random()*1.8;
+    const A = (near ? 0.30 : 0.18);
+
+    const src = ctx.createBufferSource(); src.buffer = NOISE; src.loop = true;
+    const f  = ctx.createBiquadFilter(); f.type='lowpass'; f.Q.value = 0.7;
+    f.frequency.setValueAtTime(near ? 800 : 380, t);
+    f.frequency.exponentialRampToValueAtTime(85, t+len);
+    const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value = 26;
+    const g  = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(A,        t+0.06);   // ゴロ
+    g.gain.exponentialRampToValueAtTime(A*0.30,   t+0.55);
+    g.gain.exponentialRampToValueAtTime(A*0.62,   t+1.05);   // ゴロ
+    g.gain.exponentialRampToValueAtTime(A*0.18,   t+1.85);
+    g.gain.exponentialRampToValueAtTime(A*0.34,   t+2.35);   // ゴロ…
+    g.gain.exponentialRampToValueAtTime(0.0001,   t+len);
+    src.connect(f); f.connect(hp); hp.connect(g);
+    g.connect(master); g.connect(wet);
+    src.start(t); src.stop(t+len+0.2);
+
+    const o = ctx.createOscillator(); o.type = 'sine';       // 腹に響く低音
+    o.frequency.setValueAtTime(58, t);
+    o.frequency.exponentialRampToValueAtTime(32, t+1.2);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(A*0.85, t+0.05);
+    og.gain.exponentialRampToValueAtTime(0.0001, t+1.5);
+    o.connect(og); og.connect(master);
+    o.start(t); o.stop(t+1.6);
+  }
   return {
     isOn: ()=> want,
     toggle(){ setOn(!want); return want; },
     kick(){ if(want && !running) setOn(true); else if(ready && ctx.state==='suspended') ctx.resume(); },
-    chirp,
+    chirp, thunder,
     rain(level){                                   // 0〜1 の降り具合で雨音を鳴らす
       if(!running || !ready || !rainG) return;
-      rainG.gain.setTargetAtTime(0.0001 + Math.min(1,level)*0.085, ctx.currentTime, 0.7);
+      rainG.gain.setTargetAtTime(0.0001 + Math.min(1,level)*0.040, ctx.currentTime, 0.9);
     },
     tick(dt, dark){
       if(!running || !ready) return;
@@ -2474,6 +2606,7 @@ function frame(now){
   updateStrokes(dt);
   updateSun(dt);
   updateClouds(dt);
+  updateStorm(dt);
   updateBirds(dt);
   updatePlants(dt);
   updateClimbers(dt);
@@ -2507,6 +2640,12 @@ function frame(now){
   if(night){
     vctx.fillStyle = 'rgba(4,10,24,.60)'; vctx.fillRect(0,0,W,H);
   }
+  if(storm > 3.5){                          // 荒れてくると、うっすら暗くなる
+    vctx.fillStyle = 'rgba(10,18,32,' + (Math.min(1,(storm-3.5)/5)*0.16) + ')';
+    vctx.fillRect(0,0,W,H);
+  }
+  drawBolts(vctx);
+  drawFlash(vctx);
   const vg = vctx.createRadialGradient(W/2,H/2, Math.min(W,H)*0.35, W/2,H/2, Math.max(W,H)*0.78);
   vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,.35)');
   vctx.fillStyle = vg; vctx.fillRect(0,0,W,H);
