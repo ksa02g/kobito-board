@@ -171,13 +171,16 @@
     <li>🚶 <b>小人</b> — びっくりしてジャンプします</li>
   </ul>
 
-  <h3>小鳥をチョークで囲むと、閉じこめられます</h3>
+  <h3>チョークで囲むと、閉じこめられます</h3>
   <ul>
-    <li>小鳥は<b>チョークの線にぶつかります</b>。まわりをぐるりと囲って線でふさぐと、
-        中から出られなくなり、かごの中をばたばた飛びまわります。</li>
-    <li><b>すきまがあると逃げます。</b>囲いは切れ目なくつなげてください。</li>
-    <li>線が寿命で消えたり、黒板消しで穴をあけると、♪ を鳴らして飛び立ちます。</li>
-    <li>小人たちも「とじこめた！」「だしてあげて」と反応します。</li>
+    <li><b>小鳥も小人も、チョークの線にぶつかります。</b>まわりをぐるりと囲って線でふさぐと、
+        中から出られなくなります。</li>
+    <li><b>すきまがあると逃げます。</b>囲いは切れ目なくつなげてください。
+        小人は<b>ふたが要ります</b>（横の壁だけだと、飛びこえてしまいます）。</li>
+    <li>小人は閉じこめられたと分かると、飛び出そうとするのをやめて中で暮らしはじめます。
+        天井に頭をぶつけると「いたっ」と言います。</li>
+    <li>線が寿命で消えたり、黒板消しで穴をあけると、よろこんで出ていきます。</li>
+    <li>閉じこめた小人のぶんだけ、新しい小人が左から歩いてきます。</li>
   </ul>
 
   <h3>草花・つる・はしご</h3>
@@ -1636,9 +1639,9 @@ function moveBird(b){
 /* まわりが線でふさがれているかを、すきま伝いに探して調べる */
 const CAGE_BUDGET = 5200;
 let cageTurn = 0;
-function isCaged(b){
+function isCaged(b, yOff){
   if(!cover || GW<3 || GH<3) return false;
-  const gx = (b.x/CELL)|0, gy = (b.y/CELL)|0;
+  const gx = (b.x/CELL)|0, gy = ((b.y + (yOff||0))/CELL)|0;
   if(gx<1 || gy<1 || gx>=GW-1 || gy>=GH-1) return false;
   const start = gy*GW+gx;
   if(cover[start] > 0) return b.caged === true;      // 線の上にいるときは前回の判定のまま
@@ -1790,7 +1793,7 @@ function makeKobito(fromSky){
     speed: rnd(0.30,0.44), grounded:false, seed: rnd(0,997),
     say:null, sayT:0, doodle:null, back:0, wear: pick(HATS),
     climb:null, cdir:-1, cspd:0, climbCool:0, cGrace:0,
-    dodge:0, dodgeDir:1
+    dodge:0, dodgeDir:1, caged:false
   };
 }
 function spawnKobito(){
@@ -1865,10 +1868,28 @@ function chooseAction(k){
   else if(r < 0.71){ k.state='sit';  k.t = rnd(90,200); }
   else if(r < 0.77){ k.state='cheer'; k.t = 60; }
   else if(r < 0.83){ k.state='stretch'; k.t = 70; }
-  else if(r < 0.89){ k.vy = -4.6*Math.sqrt(k.sc); k.grounded=false; k.state='jump'; k.t=40; }
+  else if(r < 0.89){
+    if(k.caged){ k.state='idle'; k.t = rnd(50,110); }   // 囲われているときは飛び出そうとしない
+    else { k.vy = -4.6*Math.sqrt(k.sc); k.grounded=false; k.state='jump'; k.t=40; }
+  }
   else if(r < 0.97){ startDoodle(k); }
   else { k.state='walk'; k.t = rnd(120,300); }
   if(Math.random() < 0.18) speak(k);
+  if(k.caged && Math.random() < 0.12)
+    speak(k, pick(['でられない…','ここ、せまい','だしてー','おうちみたい','まあ いいか']));
+}
+/* 線でぐるりと囲われているかを見はる */
+let kobitoTurn = 0;
+function checkKobitoCage(k){
+  const c = isCaged(k, -10*k.sc);
+  if(c === k.caged) return;
+  k.caged = c;
+  if(c){
+    spark(k.x, k.y-14*k.sc, 6, '#f4f1e6');
+    if(Math.random() < 0.75) speak(k, pick(['とじこめられた！','でられない！','おうちだ！','ここから出して〜']));
+  }else{
+    if(Math.random() < 0.65) speak(k, pick(['でられた！','ありがとう','やっとだ','いってきます']));
+  }
 }
 function tapKobito(k){
   k.vy = -5.4*Math.sqrt(k.sc); k.grounded = false; k.state = 'jump'; k.t = 50; k.doodle = null;
@@ -1993,10 +2014,10 @@ function updateKobito(k){
       else{
         const sy = probeSurface(nx, k.y, STEP + 2, 6*s);
         if(sy === null){                                   // 崖
-          if(Math.random() < 0.5){ k.vy = -4.6*Math.sqrt(s); k.grounded=false; k.state='jump'; k.x = nx; }
+          if(!k.caged && Math.random() < 0.5){ k.vy = -4.6*Math.sqrt(s); k.grounded=false; k.state='jump'; k.x = nx; }
           else k.back = rnd(25,60);
         }else if(k.y - sy > STEP){                          // 高すぎる壁
-          if(Math.random() < 0.3){ k.vy = -5.3*Math.sqrt(s); k.grounded=false; k.state='jump'; }
+          if(!k.caged && Math.random() < 0.3){ k.vy = -5.3*Math.sqrt(s); k.grounded=false; k.state='jump'; }
           else k.back = rnd(30,70);
         }else{
           k.x = nx; k.y = sy;
@@ -2004,11 +2025,17 @@ function updateKobito(k){
         }
       }
     }else{
-      k.x = nx;
+      // 空中でも壁にぶつかる（囲いから横に抜けられないように）
+      const lead = nx + (k.vx > 0 ? 3.5*s : -3.5*s);
+      if(solidAt(lead, k.y-2) || solidAt(lead, k.y-9*s) || solidAt(lead, k.y-17*s)){
+        if(k.caged) k.back = (k.vx > 0) ? rnd(25,60) : 0;
+      }else{
+        k.x = nx;
+      }
     }
   }
 
-  // 落下
+  // 落下・上昇
   if(!k.grounded){
     k.vy = Math.min(k.vy + GRAV, 11);
     const ny = k.y + k.vy;
@@ -2024,7 +2051,19 @@ function updateKobito(k){
         k.y = ny;
         if(k.state !== 'fall' && k.vy > 1) k.state = 'fall';
       }
-    }else k.y = ny;
+    }else{
+      // 上へ：頭が線に当たったらそこで止まる（天井）
+      const hh = 20*s;
+      let bonk = null;
+      for(let y=Math.floor(k.y-hh); y >= Math.floor(ny-hh); y--){
+        if(solidAt(k.x, y)){ bonk = y; break; }
+      }
+      if(bonk !== null){
+        k.y = bonk + hh + 1; k.vy = 0; k.state = 'fall';
+        dust(k.x, k.y - hh, 3);
+        if(Math.random() < 0.35) speak(k, pick(['いたっ','あたま…','でられない','ふさがってる']));
+      }else k.y = ny;
+    }
     if(k.y > H + 80){ k.y = rnd(-140,-40); k.vy = 0; k.x = rnd(10, Math.max(20,W*0.4)); }
   }
 
@@ -2044,13 +2083,18 @@ function updatePopulation(dt){
     targetPop = clamp(targetPop + rndi(-4,4), 5, 20);
   }
   // 右端から退場
+  let free = 0;
   for(let i=kobitos.length-1;i>=0;i--){
     const k = kobitos[i];
-    if(k.x > W + 40*k.sc){ kobitos.splice(i,1); }
+    if(k.x > W + 40*k.sc){ kobitos.splice(i,1); continue; }
+    if(!k.caged) free++;                       // 閉じこめられた小人は「歩いている数」に数えない
   }
   spawnTimer -= dt;
-  if(kobitos.length < targetPop && spawnTimer <= 0){
+  if(free < targetPop && kobitos.length < 30 && spawnTimer <= 0){
     spawnKobito(); spawnTimer = rnd(0.3, 1.4);
+  }
+  if(kobitos.length){                          // 1フレームに1人ずつ、囲われていないか調べる
+    checkKobitoCage(kobitos[kobitoTurn++ % kobitos.length]);
   }
   updateCount();
 }
