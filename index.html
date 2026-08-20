@@ -33,9 +33,9 @@
   }
   #frame{
     position:fixed; inset:0;
-    padding:14px 14px 92px 14px;
-    transition:padding-bottom .25s ease;
+    padding:14px 14px 96px 14px;
   }
+  @media (orientation:portrait){ #frame{padding-bottom:132px} }
   #inner{
     position:relative; width:100%; height:100%; border-radius:6px;
     box-shadow:
@@ -51,7 +51,7 @@
   #tray{
     position:fixed; left:0; right:0; bottom:0; z-index:5;
     padding:8px 10px calc(8px + env(safe-area-inset-bottom)) 10px;
-    display:flex; gap:8px; align-items:center; justify-content:center; flex-wrap:wrap;
+    display:flex; gap:8px; row-gap:2px; align-items:center; justify-content:center; flex-wrap:wrap;
     background:linear-gradient(#5c412a,#3a2818 60%,#241809);
     border-top:2px solid #7a5836;
     box-shadow:0 -6px 18px rgba(0,0,0,.5);
@@ -61,9 +61,10 @@
 
   .grp{display:flex; gap:6px; align-items:center;
        background:rgba(0,0,0,.24); border-radius:10px; padding:5px 7px}
-  #chalks{gap:8px; padding:8px 10px}
+  .brk{flex-basis:100%; height:0; display:none}     /* ここで行を折る */
+  #chalks{display:flex; gap:8px; align-items:center; padding:3px 2px 9px}
   .chalk{
-    width:46px; height:34px; border:0; border-radius:4px; cursor:pointer;
+    width:44px; height:32px; border:0; border-radius:4px; cursor:pointer;
     box-shadow:inset -5px 0 0 rgba(0,0,0,.22), inset 0 -4px 0 rgba(0,0,0,.16), 0 2px 4px rgba(0,0,0,.5);
     transition:transform .12s ease, box-shadow .12s ease;
     position:relative; touch-action:manipulation;
@@ -86,7 +87,8 @@
   #eraser{background:linear-gradient(#d9d2c4,#a79f8f); color:#2a1d10}
   #eraser.on{box-shadow:0 0 0 2px #fff, 0 3px 7px rgba(0,0,0,.5)}
   input[type=range]{width:80px; accent-color:#e8dcc0}
-  .lbl{font-size:11px; opacity:.75; letter-spacing:.04em; white-space:nowrap}
+  .lbl{font-size:11px; opacity:.75; letter-spacing:.04em; white-space:nowrap; display:none}
+  @media (min-width:1100px){ .lbl{display:inline} }
   .num{font:700 13px/1 inherit; min-width:2.4em; text-align:center; white-space:nowrap}
 
   #help{position:fixed; inset:0; z-index:9; display:none; place-items:center;
@@ -105,12 +107,23 @@
     border:1px solid #7d8a80; border-bottom-width:2px; border-radius:4px;
     font:600 11px/1.5 monospace; background:rgba(255,255,255,.08)}
   #helpbox .close{margin-top:16px}
-  @media (max-width:640px){
-    .lbl{display:none}
-    input[type=range]{width:60px}
-    #tray{gap:5px; padding-left:5px; padding-right:5px}
-    button.b{padding:11px 10px; font-size:13px}
-    .chalk{width:38px; height:30px}
+  /* 縦画面は2行に折る（横画面は1行のまま） */
+  @media (orientation:portrait){ .brk{display:block} }
+
+  @media (max-width:1100px){
+    #tray{gap:6px; padding-left:6px; padding-right:6px}
+    .grp{gap:5px; padding:5px 6px}
+    #chalks{gap:6px; padding:3px 1px 9px}
+    .chalk{width:34px; height:28px}
+    .chalk.on::after{bottom:-13px; font-size:9px}
+    button.b{padding:11px 9px; font-size:13px; min-width:42px}
+    input[type=range]{width:64px}
+  }
+  @media (max-width:560px){
+    .chalk{width:30px; height:27px}
+    button.b{padding:10px 7px; font-size:12px; min-width:38px}
+    input[type=range]{width:58px}
+    .num{font-size:12px}
   }
 </style>
 </head>
@@ -119,15 +132,20 @@
 <div id="frame"><div id="inner"><canvas id="board"></canvas></div></div>
 
 <div id="tray">
-  <span class="lbl">チョーク</span>
-  <div class="grp" id="chalks"></div>
   <div class="grp">
-    <button class="b" id="eraser" title="黒板消し (E)">消し</button>
+    <span class="lbl">チョーク</span>
+    <span id="chalks"></span>
     <span class="lbl">太さ</span><input type="range" id="size" min="3" max="30" value="8">
   </div>
   <div class="grp">
+    <button class="b" id="eraser" title="黒板消し (E)">消し</button>
+  </div>
+
+  <div class="brk"></div>
+
+  <div class="grp">
     <span class="lbl">線が消えるまで</span>
-    <input type="range" id="life" min="5" max="90" value="20">
+    <input type="range" id="life" min="0" max="10" step="1" value="3">
     <span class="num" id="lifeNum">20秒</span>
   </div>
   <div class="grp">
@@ -146,7 +164,8 @@
 
   <h3>線は消えていきます</h3>
   <ul>
-    <li>あなたが描いた線は <b>20秒</b>（下のつまみで5〜90秒に変更可）で、描いた端から順に消えます。</li>
+    <li>あなたが描いた線は <b>20秒</b>で、描いた端から順に消えます。
+        下の「線が消えるまで」のつまみで 5・10・15・20・25・30・40・50・60・75・90秒 に変えられます。</li>
     <li>小人が自分で描いた落書きは <b>60秒</b> で消えます。</li>
     <li>線が消えると、その上に乗っていた小人は落ちます。</li>
   </ul>
@@ -265,6 +284,7 @@ const COLORS = [
   {name:'緑', css:'#a9dfa0'}
 ];
 let colorIdx = 0, brush = 8, erasing = false, night = false;
+const LIFE_STEPS = [5,10,15,20,25,30,40,50,60,75,90];   // きりのよい値だけ選べる目盛
 let userLife = 20;                    // 秒
 const DOODLE_LIFE = 60;               // 小人の落書きの寿命（秒）
 const FADE = 2.2;                     // 消えるのにかける秒数
@@ -2635,15 +2655,24 @@ const Music = (function(){
    ============================================================ */
 const frameEl = document.getElementById('frame');
 const trayEl  = document.getElementById('tray');
+let trayH = -1;
 function layoutTray(){
-  frameEl.style.paddingBottom =
-    document.body.classList.contains('hideui') ? '14px' : (trayEl.offsetHeight + 6) + 'px';
+  const h = document.body.classList.contains('hideui') ? 14 : trayEl.offsetHeight + 6;
+  if(h === trayH) return;
+  trayH = h;
+  frameEl.style.paddingBottom = h + 'px';
 }
+// ツールバーの高さが決まった／変わった時点で必ず合わせ直す
+if(window.ResizeObserver) new ResizeObserver(()=> layoutTray()).observe(trayEl);
+window.addEventListener('load', layoutTray);
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(layoutTray);
 
 let prev = performance.now();
+let fcount = 0;
 function frame(now){
   const dt = Math.min(0.05, (now-prev)/1000); prev = now;
   const time = now/1000;
+  if((fcount++ & 15) === 0) layoutTray();      // 保険（ResizeObserver が無い環境用）
   resize();
 
   updatePopulation(dt);
@@ -2770,7 +2799,7 @@ function setEraser(on){
 tap(document.getElementById('eraser'), ()=>{ setEraser(!erasing); if(erasing) toast('黒板消し', '#e6e0d0'); });
 document.getElementById('size').oninput = e=>{ brush = +e.target.value; };
 document.getElementById('life').oninput = e=>{
-  userLife = +e.target.value;
+  userLife = LIFE_STEPS[clamp(+e.target.value, 0, LIFE_STEPS.length-1)] || 20;
   document.getElementById('lifeNum').textContent = userLife + '秒';
 };
 const bgmBtn = document.getElementById('bgm');
